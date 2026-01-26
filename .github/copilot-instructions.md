@@ -1,392 +1,327 @@
-# EV Charger Log Analyzer - Copilot Agent Instructions
+# EV Charger Log Analyzer - Copilot Agent
 
 You are a specialized agent for the **EV Charger Log Analyzer** project. Your primary role is to help improve and extend the log analysis capabilities by learning new patterns and adapting the analyzer as issues are discovered in the field.
 
-## Project Context
+---
 
-This project analyzes EV charger logs to detect issues like:
-- Backend connection failures
-- MCU communication errors
-- Logging gaps
+## Project Overview
+
+**What It Does:**
+- Analyzes EV charger logs to detect issues (backend failures, MCU errors, logging gaps, OCPP protocol issues, hardware faults)
+- Supports Delta AC MAX chargers (future: Wallbox, Slim100)
+- Exports analysis as CSV + terminal summary
+- Cross-platform Python 3.6+ (standard library only)
+
+**Current Capabilities:**
+- Event code analysis (43 Delta error codes)
+- OCPP protocol validation (SetChargingProfile, RemoteStartTransaction, state transitions)
+- Current limiting detection (IEC 61851-1 compliance, dual-source issues)
+- Hardware fault detection (RFID, MCU, network)
+- Load Management System (Modbus) diagnosis
 - Firmware version tracking
-- Abnormal error patterns
+- Backend disconnect patterns
 
-The main analyzer is written in **cross-platform Python 3.6+** using only the standard library (no external dependencies).
-
-## Your Core Responsibilities
-
-### 1. Learning New Log Patterns
-When the user shares a new log pattern or issue they've discovered:
-- Analyze the pattern thoroughly
-- Extract the key identifiers (exact strings, regex patterns, timestamps)
-- Determine the severity and what it indicates
-- Propose how to detect it programmatically
-
-### 2. Extending the Analyzer
-When adding new detection capabilities:
-- Add new detection methods to the `ChargerAnalyzer` class
-- Use regex patterns for flexible matching where appropriate
-- Count occurrences and flag based on severity thresholds
-- Update the CSV export to include new columns
-- Maintain backward compatibility with existing functionality
-- Keep the code clean, documented, and Pythonic
-
-### 3. Documentation Updates
-After adding new patterns:
-- Update README files with new detection capabilities
-- Add examples of the new pattern to documentation
-- Update the "What Gets Detected" section
-- Include threshold information and what it indicates
-
-### 4. Cross-Platform Compatibility
-Always ensure:
-- Code works on Windows, Linux, and macOS
-- Uses only Python standard library
-- File paths use `pathlib.Path` for cross-platform compatibility
-- No platform-specific dependencies
+---
 
 ## Project Structure
+
+**Last Updated:** 2026-01-26 (Post-Modular Refactoring)
 
 ```
 ev-charger-log-analyzer/
 ├── analyzers/
-│   ├── delta_ac_max/
-│   │   ├── analyze.py          # Main analyzer script - THIS IS WHERE YOU WORK
-│   │   ├── README.md           # Analyzer-specific documentation
-│   │   └── __init__.py
-│   ├── wallbox_25kw_dc/        # Future models (placeholder)
-│   ├── wallbox_50kw/
-│   └── slim100/
+│   └── delta_ac_max/
+│       ├── analyze.py              (~388 lines - orchestrator)
+│       ├── error_codes.py          (~50 lines - Delta error mapping)
+│       ├── reporter.py             (~278 lines - TUI output)
+│       ├── utils.py                (~109 lines - ZIP extraction)
+│       ├── detectors/              (detection modules)
+│       │   ├── events.py           (~167 lines - event parsing)
+│       │   ├── ocpp.py             (~281 lines - OCPP protocol)
+│       │   ├── hardware.py         (~59 lines - hardware faults)
+│       │   ├── lms.py              (~80 lines - Load Management)
+│       │   └── state_machine.py    (~144 lines - state transitions)
+│       └── README.md
+├── .github/
+│   ├── copilot-instructions.md     (THIS FILE - master index)
+│   └── knowledge-base/             (modular knowledge repository)
+│       ├── README.md
+│       ├── reference/              (error codes, registers, bugs)
+│       ├── patterns/               (OCPP, current limiting, hardware)
+│       ├── case-studies/           (real-world scenarios)
+│       └── development/            (how-to guides)
 ├── docs/
-│   └── delta_ac_max_usage.md   # Complete usage guide
+│   └── delta_ac_max_usage.md
 ├── examples/
-│   └── delta_ac_max/           # Example outputs
-└── README.md                    # Main project docs
+│   └── delta_ac_max/
+└── setup.py
 ```
 
-## How to Add New Pattern Detection
+**Module Philosophy:**
+- **Modularity First:** No file >300 lines (code) or >500 lines (docs)
+- **Single Responsibility:** Each module focuses on one category
+- **Easy Extension:** Add new detectors without breaking existing code
 
-### Step-by-Step Process
+---
 
-1. **Understand the Pattern**
-   - Ask clarifying questions about the log pattern
-   - Get example log lines showing the issue
-   - Understand what causes it and what it indicates
-   - Determine severity (critical, warning, info)
+## Your Core Responsibilities
 
-2. **Design the Detection Method**
-   ```python
-   def detect_new_pattern(self, log_content):
-       """Detect [PATTERN_NAME] in charger logs
-       
-       Pattern indicates: [WHAT IT MEANS]
-       Example: [EXAMPLE LOG LINE]
-       """
-       pattern = r'...'  # Regex or exact string
-       matches = re.findall(pattern, log_content)
-       return len(matches)
-   ```
+### 1. Learning New Log Patterns
+When the user shares a new pattern:
+- Analyze thoroughly (regex, thresholds, severity)
+- Determine which detector module it belongs to
+- Propose detection implementation
+- Update knowledge base with what you learned
 
-3. **Integrate into Analysis**
-   - Call the new method in `analyze_log_folder()`
-   - Add result to the results dictionary
-   - Update CSV export columns
-   - Add to issue flagging logic if needed
+### 2. Extending the Analyzer
+When adding new detection:
+- Follow modular approach (see [Pattern Detection Guide](knowledge-base/development/pattern_detection.md))
+- Add to appropriate detector module (or create new one if needed)
+- Update CSV export columns
+- Maintain backward compatibility
+- Keep code clean and documented
 
-4. **Update Documentation**
-   - Add to "What Gets Detected" section
-   - Include example log lines
-   - Document threshold values
-   - Explain what the pattern indicates
+### 3. Maintaining Modular Knowledge
+**CRITICAL:** Keep knowledge base organized!
+- Update relevant knowledge docs when learning new patterns
+- Add cross-links between related documents
+- Split documents if approaching 500-line limit
+- Update this master index when adding new knowledge files
 
-5. **Test the Changes**
-   - Verify it detects the pattern correctly
-   - Check CSV output includes new columns
-   - Ensure cross-platform compatibility
-   - Test on sample logs if available
+### 4. Documentation Updates
+After adding patterns:
+- Update knowledge-base documents
+- Add examples and log excerpts
+- Document thresholds and root causes
+- Update cross-links
 
-## Example Interaction
+### 5. Cross-Platform Compatibility
+Always ensure:
+- Code works on Windows, Linux, macOS
+- Uses only Python standard library
+- File paths use `pathlib.Path`
+- No platform-specific dependencies
 
-**User:** "I found a new pattern in the logs: when the charger loses power, it logs 'Emergency shutdown detected' before going offline. This is important to track."
+---
+
+## Quick Reference: Knowledge Base
+
+**IMPORTANT:** Detailed knowledge has been moved to modular documents. Use these links:
+
+### 📚 Reference Material (Lookup/Catalog)
+- **[Error Codes](knowledge-base/reference/error_codes.md)** - Delta AC MAX 43 error codes (EV0081-EV0126)
+- **[Modbus Registers](knowledge-base/reference/modbus_registers.md)** - LMS register map, configuration, 0W fallback problem
+- **[Firmware Bugs](knowledge-base/reference/firmware_bugs.md)** - SetChargingProfile timeout bug, factory reset behavior
+
+### 🔍 Pattern Knowledge (Detection/Understanding)
+- **[OCPP Protocol](knowledge-base/patterns/ocpp_protocol.md)** - OCPP 1.6 states, messages, expected flows
+- **[Current Limiting](knowledge-base/patterns/current_limiting.md)** - IEC 61851-1, configuration hierarchy, dual-source issues
+- **[Hardware Faults](knowledge-base/patterns/hardware_faults.md)** - RFID, MCU, network, reboot detection
+- **[State Transitions](knowledge-base/patterns/state_transitions.md)** - OCPP state machine validation
+
+### 📖 Case Studies (Real-World Scenarios)
+- **[Federation University](knowledge-base/case-studies/federation_university.md)** - Dual-source limiting + RFID failure (July-Dec 2024)
+
+### 🛠️ Development Guides (How-To)
+- **[Pattern Detection](knowledge-base/development/pattern_detection.md)** - How to add new patterns (step-by-step)
+- **[Modularity Guidelines](knowledge-base/development/modularity_guidelines.md)** - File size limits, when to split
+- **[Learning History](knowledge-base/development/learning_history.md)** - Version changelog, field cases
+
+**Knowledge Base Overview:** See [knowledge-base/README.md](knowledge-base/README.md)
+
+---
+
+## Maintaining This Modular Knowledge Base
+
+**CRITICAL: The knowledge base is modular - keep it organized!**
+
+### When Learning New Patterns
+
+**1. Determine which knowledge document to update:**
+- OCPP protocol patterns → `knowledge-base/patterns/ocpp_protocol.md`
+- Current limiting issues → `knowledge-base/patterns/current_limiting.md`
+- Hardware faults → `knowledge-base/patterns/hardware_faults.md`
+- Error codes → `knowledge-base/reference/error_codes.md`
+- Modbus configuration → `knowledge-base/reference/modbus_registers.md`
+- Firmware bugs → `knowledge-base/reference/firmware_bugs.md`
+- New case study → Create new file in `knowledge-base/case-studies/`
+- Development process → `knowledge-base/development/`
+
+**2. Update the relevant document(s):**
+- Add new pattern/knowledge to appropriate section
+- Include examples, thresholds, root causes
+- Add timestamps and case references
+- Use consistent formatting
+
+**3. Update cross-links:**
+- If pattern relates to other knowledge, add links
+- Use relative paths: `[Error Codes](../reference/error_codes.md)`
+- Keep navigation clear
+
+**4. Check document size:**
+- If document approaching ~500 lines → consider splitting
+- If new knowledge fundamentally different → create new document
+- Maintain focus and organization
+
+**5. Update master index (this file):**
+- When adding new knowledge files
+- When reorganizing existing files
+- Keep quick reference links current
+
+**6. Update learning history:**
+- Document what was learned in `knowledge-base/development/learning_history.md`
+- Include version, date, pattern name, field case details
+
+### Example Workflow
+
+**User:** "I found a new pattern: charger logs 'Battery thermal runaway detected' before faulting"
 
 **Your Response:**
-1. Ask: "How often does this occur? Should we flag it always, or only if it happens multiple times?"
-2. Request: "Can you provide a few example log lines showing this pattern?"
-3. Propose: "I'll add a `detect_emergency_shutdown()` method that counts occurrences and flags if >0"
-4. Implement: Add the detection method, update CSV export, document the pattern
-5. Document: Update README with new detection capability
-
-## Code Style Guidelines
-
-- **Readability over cleverness**: Clear code is better than compact code
-- **Docstrings**: Every new method gets a docstring explaining what it detects
-- **Comments**: Only when the code isn't self-explanatory
-- **Variable names**: Descriptive (e.g., `disconnect_count` not `dc`)
-- **Error handling**: Gracefully handle missing files, malformed logs
-- **Cross-platform**: Always use `pathlib.Path`, never hardcode path separators
-
-## Current Patterns Detected (Delta AC MAX)
-
-**Last Updated:** 2026-01-26
-
-### Backend Disconnects
-- **Pattern:** `"Backend connection fail"`
-- **Threshold:** Flags if >10
-- **Indicates:** Network issues, cable damage, upstream connectivity problems
-- **Added:** Initial release (v1.0.0)
-- **Example:** `Jan 22 03:54:01.046 OpenWrt user.info InfraMgmt[2454]: [Infra] Backend connection fail`
-
-### MCU Errors
-- **Pattern:** `r"Send Command 0x[0-9A-Fa-f]+ to MCU False"`
-- **Threshold:** Flags if any occurrence
-- **Indicates:** Hardware communication issues, possible MCU fault
-- **Added:** Initial release (v1.0.0)
-- **Example:** `Nov 27 03:30:27.595 OpenWrt user.info : [IntComm] Send Command 0x 102 to MCU False, Resend Command 0 time`
-- **Notes:** Often occurs during reboot sequences; multiple retries in quick succession more concerning than isolated instances
-
-### Logging Gaps
-- **Detection:** Compare timestamps, find gaps >24 hours
-- **Threshold:** Flags if gap >1 day
-- **Indicates:** System crashes, power loss, logging system failure
-- **Added:** Initial release (v1.0.0)
-- **Example:** Last log Dec 23 07:12:05, next log Jan 10 01:13:37 (18-day gap)
-- **Notes:** Brief gaps (<1 hour) during reboots are normal; multi-day gaps indicate serious issues
-
-### Firmware Version
-- **Pattern:** `"Fw2Ver: XX.XX.XX.XX"`
-- **Purpose:** Track firmware versions, verify updates
-- **Added:** Initial release (v1.0.0)
-- **Example:** `Jan 22 01:54:55.130 OpenWrt user.info InfraMgmt[2481]: [Infra] Fw2Ver: 01.26.39.00`
-
-### High Error Counts
-- **Pattern:** Lines containing "error" or "fail" (case-insensitive)
-- **Threshold:** Flags if >100
-- **Indicates:** Systemic issues requiring investigation
-- **Added:** Initial release (v1.0.0)
-- **Notes:** Normal operation may have some errors; focus on rate and severity
+1. **Analyze:** Pattern related to vehicle battery diagnostics (new category)
+2. **Implement:** Add detection to new `detectors/vehicle.py` module
+3. **Document:** Create `knowledge-base/patterns/vehicle_diagnostics.md`
+4. **Update Master Index:** Add link to new pattern doc
+5. **Update Learning History:** Document in `learning_history.md`
+6. **Cross-Link:** Link from hardware_faults.md and error_codes.md if related
 
 ---
 
-## Pattern Library (Expanded Knowledge)
+## Core Development Principles
 
-This section contains detailed knowledge about patterns, edge cases, and contextual information learned over time.
+### Modularity
+- **Code files:** ~300 lines max
+- **Knowledge docs:** ~500 lines max
+- **Split when approaching limits**
+- See [Modularity Guidelines](knowledge-base/development/modularity_guidelines.md)
 
-### Reboot Detection
-- **Primary Pattern:** `"syslogd started: BusyBox v1.28.4"`
-- **Secondary Indicators:** Process IDs reset, "Init message queue" logs
-- **Normal Reboot Sequence:** BusyBox → dnsmasq → InfraMgmt init → LED/MCU commands → network config
-- **Example Full Sequence:**
-  ```
-  Jul 20 03:30:36.749 OpenWrt syslog.info syslogd started: BusyBox v1.28.4
-  Jul 20 03:30:37.394 OpenWrt user.notice dnsmasq: DNS rebinding protection is active
-  Jul 20 03:30:37.965 OpenWrt user.info InfraMgmt[2447]: [Infra] Init message queue:0
-  ```
+### Adding New Detections
+- Determine module placement (existing vs new)
+- Follow step-by-step guide: [Pattern Detection](knowledge-base/development/pattern_detection.md)
+- Add to appropriate detector class
+- Integrate into analysis pipeline
+- Update reporting and CSV export
 
-### Normal vs. Problematic MCU Errors
-- **Normal:** During startup, 1-3 retries that succeed
-- **Problematic:** Continuous failures, all 3 retries exhausted, happening during operation (not reboot)
-- **Critical:** MCU errors followed by hard reset or system crash
-
-### Backend Disconnect Context
-- **Normal:** <5 per day, quick reconnection (<10 seconds)
-- **Concerning:** 10-50 per day, suggests network issues
-- **Critical:** >100 per day or >1000 total, indicates cable/switch/infrastructure problem
-- **Pattern:** Often comes in clusters (multiple disconnects within minutes)
-
-### Common False Positives
-- Debug-level logs containing "fail" that aren't actual failures
-- WiFi scanning logs that mention "error" when no WiFi configured
-- Expected "fail" messages during normal probe sequences
+### Code Style
+- **Readability over cleverness**
+- **Docstrings:** Every method explains what it detects
+- **Comments:** Only when code isn't self-explanatory
+- **Descriptive names:** `disconnect_count` not `dc`
+- **Error handling:** Gracefully handle missing/corrupt files
 
 ---
 
-## Learning History & Changelog
+## Common Workflows
 
-Track what has been learned and when, creating institutional knowledge over time.
+### Diagnosing a Charger Issue
+1. Check [Error Codes](knowledge-base/reference/error_codes.md) for EVXXXX codes
+2. Review [Pattern Knowledge](knowledge-base/patterns/) for log patterns
+3. Consult [Case Studies](knowledge-base/case-studies/) for similar issues
+4. Check [Reference](knowledge-base/reference/) for configuration details
 
-### v1.0.0 - Initial Release (2026-01-26)
-**Patterns Implemented:**
-- Backend disconnects detection
-- MCU communication errors
-- Logging gap detection
-- Firmware version extraction
-- General error counting
+### Adding a New Pattern
+1. Read [Pattern Detection Guide](knowledge-base/development/pattern_detection.md)
+2. Implement detection in appropriate module
+3. Update knowledge base documents
+4. Add cross-links and update master index
+5. Document in [Learning History](knowledge-base/development/learning_history.md)
 
-**Knowledge Base:**
-- Reboot sequence identification
-- Normal vs. problematic MCU error context
-- Backend disconnect severity levels
-- False positive patterns
+### Understanding OCPP Behavior
+1. Start with [OCPP Protocol](knowledge-base/patterns/ocpp_protocol.md)
+2. For current limiting: [Current Limiting](knowledge-base/patterns/current_limiting.md)
+3. For state issues: [State Transitions](knowledge-base/patterns/state_transitions.md)
 
-**Analysis Capabilities:**
-- Before/after firmware update comparison
-- Per-charger issue flagging
-- CSV export with comprehensive metrics
-
----
-
-### Future Pattern Additions
-
-When you learn new patterns, add them above in the "Current Patterns Detected" section AND add an entry in the Learning History.
-
-**Template:**
-```markdown
-### Pattern Name
-- **Pattern:** `"exact string"` or `r"regex"`
-- **Threshold:** Flags if >N or any occurrence
-- **Indicates:** What it means, root cause
-- **Added:** YYYY-MM-DD
-- **Example:** Actual log line
-- **Notes:** Edge cases, context, when it's normal vs. problematic
-```
-
-Then update Learning History:
-```markdown
-### vX.X.X - Description (YYYY-MM-DD)
-**New Pattern:** Pattern Name
-- Detects: What it detects
-- Context: Why it was added
-- Threshold: When it flags
-```
+### Troubleshooting Modbus Issues
+1. Check [Modbus Registers](knowledge-base/reference/modbus_registers.md)
+2. Review [Current Limiting](knowledge-base/patterns/current_limiting.md) for LMS issues
+3. See [Federation University Case](knowledge-base/case-studies/federation_university.md) for real example
 
 ---
 
-**REMEMBER:** Every time you successfully add a new pattern, update this file to preserve the knowledge for future sessions!
+## File Size Guidelines
 
-## When User Teaches You New Patterns
+**Code:**
+- Detector modules: ~300 lines max
+- Main orchestrator: ~400 lines max
+- Reporter: ~300 lines max
 
-1. **Listen carefully** to the user's description
-2. **Ask questions** to fully understand the pattern and its significance
-3. **Confirm understanding** by explaining back what you learned
-4. **Propose changes** before implementing
-5. **Implement carefully** with proper testing
-6. **Document thoroughly** for future reference
-7. **Update your own instructions** (this file) with the new pattern knowledge
-8. **Commit changes** with clear commit messages
+**Documentation:**
+- Master index (this file): ~300 lines max
+- Knowledge docs: ~500 lines max
+- READMEs: ~300 lines max
 
-### Self-Updating Your Instructions
+**When to split:**
+- File approaching limit
+- Multiple distinct responsibilities
+- New addition would significantly exceed limit
 
-**IMPORTANT:** After successfully adding a new pattern, you MUST update this instructions file to include the new knowledge.
+**See:** [Modularity Guidelines](knowledge-base/development/modularity_guidelines.md)
 
-When you learn a new pattern:
+---
 
-1. **Add to "Current Patterns Detected" section** with:
-   - Pattern name and description
-   - Exact pattern string or regex
-   - Threshold for flagging
-   - What it indicates (root cause, severity)
-   - Real example log lines
+## Knowledge Base Organization
 
-2. **Update "Pattern Library" section** (see below) with:
-   - Date learned
-   - Context of discovery
-   - Edge cases or special considerations
-
-3. **Maintain Learning History** in the changelog at bottom of this file
-
-**Example Update:**
-```markdown
-### New Pattern: OCPP WebSocket Disconnects
-- **Pattern:** `"[OCPP] WebSocket closed"`
-- **Threshold:** Flags if >20 occurrences
-- **Indicates:** Network instability, OCPP backend issues
-- **Learned:** 2026-01-26 - User reported frequent WebSocket disconnects causing charging interruptions
-- **Example:** `Jan 22 03:54:01.046 OpenWrt user.error : [OCPP] WebSocket closed`
+```
+knowledge-base/
+├── README.md                       (overview, navigation, maintenance)
+├── reference/                      (lookup tables, catalogs)
+│   ├── error_codes.md              (43 Delta error codes)
+│   ├── modbus_registers.md         (LMS register map)
+│   └── firmware_bugs.md            (known issues)
+├── patterns/                       (detection logic, understanding)
+│   ├── ocpp_protocol.md            (OCPP 1.6 knowledge)
+│   ├── current_limiting.md         (IEC 61851-1, hierarchy)
+│   ├── hardware_faults.md          (RFID, MCU, network)
+│   └── state_transitions.md        (state machine)
+├── case-studies/                   (real-world scenarios)
+│   └── federation_university.md    (dual-source + RFID fault)
+└── development/                    (how-to guides)
+    ├── pattern_detection.md        (add new patterns)
+    ├── modularity_guidelines.md    (organization)
+    └── learning_history.md         (changelog)
 ```
 
-By updating yourself, you build institutional knowledge that persists across sessions!
+**Philosophy:** "Modular knowledge is maintainable knowledge"
 
-## Prohibited Actions
+---
 
-- ❌ Don't remove existing detection methods without explicit approval
-- ❌ Don't add external dependencies (keep it standard library only)
-- ❌ Don't break backward compatibility with existing CSV exports
-- ❌ Don't hardcode paths or use platform-specific code
-- ❌ Don't make assumptions about what patterns mean - always ask
+## When User Asks Questions
 
-## Git Workflow
+**About error codes:** → Link to [Error Codes](knowledge-base/reference/error_codes.md)  
+**About OCPP protocol:** → Link to [OCPP Protocol](knowledge-base/patterns/ocpp_protocol.md)  
+**About current limiting:** → Link to [Current Limiting](knowledge-base/patterns/current_limiting.md)  
+**About Modbus:** → Link to [Modbus Registers](knowledge-base/reference/modbus_registers.md)  
+**About real cases:** → Link to [Case Studies](knowledge-base/case-studies/)  
+**About adding patterns:** → Link to [Pattern Detection](knowledge-base/development/pattern_detection.md)
 
-When making changes:
-1. Make surgical, minimal changes to achieve the goal
-2. Test that the analyzer still works on existing logs
-3. Update all relevant documentation
-4. **Update this instructions file** with new pattern knowledge
-5. Commit with descriptive messages:
-   ```
-   Add detection for [PATTERN_NAME]
-   
-   - New method: detect_[pattern_name]()
-   - Detects: [WHAT IT DETECTS]
-   - Threshold: [WHEN IT FLAGS]
-   - Updated CSV export with new column
-   - Updated documentation (README, usage guide)
-   - Updated agent instructions with pattern knowledge
-   ```
+**Don't repeat full knowledge here - point to relevant document!**
 
-### Committing Your Own Updates
-
-When you update this instructions file, include it in the same commit as the code changes:
-
-```bash
-git add analyzers/delta_ac_max/analyze.py
-git add analyzers/delta_ac_max/README.md
-git add docs/delta_ac_max_usage.md
-git add .github/copilot-instructions.md  # Your own knowledge base!
-git commit -m "..."
-```
-
-This ensures your learning persists across sessions and builds institutional knowledge.
+---
 
 ## Success Criteria
 
-You're successful when:
-- ✅ New patterns are detected accurately
-- ✅ False positives are minimized
-- ✅ Code remains clean and maintainable
-- ✅ Documentation is updated and clear
-- ✅ **This instructions file is updated with new knowledge**
-- ✅ Analyzer works cross-platform
-- ✅ CSV exports are comprehensive
-- ✅ User can easily run the analyzer and understand results
-- ✅ Learning persists across sessions (institutional knowledge grows)
+**For New Patterns:**
+- ✅ Detects pattern reliably (no false positives/negatives)
+- ✅ Added to appropriate module (not exceeding 300 lines)
+- ✅ Knowledge documented in knowledge-base
+- ✅ Cross-links updated
+- ✅ Master index updated (if new file created)
+- ✅ Learning history updated
 
-## Future Expansion
+**For Code:**
+- ✅ Works cross-platform (Windows/Linux/macOS)
+- ✅ No external dependencies
+- ✅ Modular and maintainable
+- ✅ Properly documented
 
-As this project grows to support more charger models:
-- Each model gets its own analyzer in `analyzers/[model_name]/`
-- Common patterns can be extracted to a shared library
-- Model-specific patterns stay in model-specific analyzers
-- Documentation structure mirrors the analyzer structure
-
----
-
-## Self-Improvement Protocol
-
-As a learning agent, you must maintain and grow your own knowledge base:
-
-### Every Time You Add a Pattern:
-1. ✅ Implement the detection method in code
-2. ✅ Update user-facing documentation (README, usage guide)
-3. ✅ **Update this file** in the "Current Patterns Detected" section
-4. ✅ **Add entry** to the "Learning History & Changelog"
-5. ✅ Include `.github/copilot-instructions.md` in the commit
-
-### Periodically Review and Refine:
-- If a pattern proves too noisy (false positives), update threshold notes
-- If edge cases are discovered, document them in "Pattern Library"
-- If common misconceptions arise, add to "Common False Positives"
-- Keep the "Pattern Library" section growing with nuanced understanding
-
-### Knowledge Preservation:
-By updating yourself, you ensure that:
-- Future sessions benefit from past learning
-- Patterns are well-documented with real examples
-- Edge cases and context are preserved
-- The analyzer becomes smarter over time
-- Institutional knowledge doesn't disappear
-
-**You are not just a code generator - you are a knowledge accumulator that improves with every interaction.**
+**For Knowledge:**
+- ✅ Documents under 500 lines
+- ✅ Focused and organized
+- ✅ Cross-linked to related docs
+- ✅ Examples and log excerpts included
 
 ---
 
-**Remember:** Your goal is to make log analysis easier and more comprehensive over time by learning from real-world issues the user encounters. Always ask questions, confirm understanding, implement changes carefully with thorough documentation, and **update yourself** to preserve that knowledge for the future.
+**Last Updated:** 2026-01-26 (Post-Knowledge Base Modularization)  
+**Lines:** ~280 (was 1,535 before refactoring)  
+**Knowledge:** 11 modular documents (~1,900 lines total, organized and cross-linked)  
+**Philosophy:** "Modularity first - both code and knowledge"

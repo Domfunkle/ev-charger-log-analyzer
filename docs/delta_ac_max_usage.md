@@ -1,7 +1,7 @@
-# EV Charger Log Analysis Tool - Usage Guide
+# Delta AC MAX Log Analyzer - Usage Guide
 
 ## Overview
-This Python script automates the analysis of EV charger logs, extracting password-protected ZIP files and analyzing for common issues.
+This tool automates the analysis of Delta AC MAX charger logs, extracting password-protected ZIP files and analyzing for common issues.
 
 **Cross-Platform:** Works on Windows, Linux, and macOS!
 
@@ -11,30 +11,47 @@ This Python script automates the analysis of EV charger logs, extracting passwor
 
 ## Installation
 
-### Linux/macOS
-```bash
-# Make script executable
-chmod +x analyze_charger_logs.py
+### Recommended: System-Wide Installation
 
-# Run directly
-./analyze_charger_logs.py
+Install once to use the `delta-ac-max-analyzer` command from anywhere:
+
+```bash
+# Clone or navigate to the repository
+cd /path/to/ev-charger-log-analyzer
+
+# Install in editable/development mode (recommended for development)
+pip install -e .
+
+# OR install normally
+pip install .
 ```
 
-### Windows
+After installation, the `delta-ac-max-analyzer` command will be available system-wide.
+
+### Alternative: Direct Script Execution
+
+You can also run the script directly without installation:
+
+**Linux/macOS:**
+```bash
+chmod +x analyzers/delta_ac_max/analyze.py
+./analyzers/delta_ac_max/analyze.py
+```
+
+**Windows:**
 ```powershell
-# Run with Python
-python analyze_charger_logs.py
+python analyzers\delta_ac_max\analyze.py
 ```
 
 ## Quick Start
 
-### Basic Usage (Extract and Analyze)
+### Basic Usage (Extract and Analyze All ZIPs)
 ```bash
 # Navigate to folder containing ZIP files
 cd /path/to/charger/logs
 
-# Run the script
-python analyze_charger_logs.py
+# Run the analyzer
+delta-ac-max-analyzer
 ```
 
 This will:
@@ -44,34 +61,81 @@ This will:
 4. Display summary report
 5. Export detailed results to CSV
 
+### Analyze Specific ZIP File(s)
+```bash
+# Analyze a single specific ZIP file
+delta-ac-max-analyzer -z EV01_before.zip
+
+# Analyze multiple specific ZIP files
+delta-ac-max-analyzer -z EV01_before.zip EV01_after.zip EV05_before.zip
+
+# Analyze specific ZIP in a different directory
+delta-ac-max-analyzer -d /path/to/logs -z EV01_before.zip
+```
+
+When using `-z`, only the specified ZIP files will be extracted and analyzed.
+
 ### Analyze Already-Extracted Logs
 ```bash
 # If logs are already extracted, skip extraction
-python analyze_charger_logs.py --skip-extraction
+delta-ac-max-analyzer --skip-extraction
 ```
 
 ### Specify Custom Directory
 ```bash
-# Analyze logs in a specific directory
-python analyze_charger_logs.py --directory /path/to/logs
+# Analyze all ZIPs in a specific directory
+delta-ac-max-analyzer --directory /path/to/logs
+
+# Short form
+delta-ac-max-analyzer -d /path/to/logs
 ```
 
 ### Keep Original ZIPs in Place
 ```bash
 # Extract but don't move ZIPs to archive folder
-python analyze_charger_logs.py --no-archive
+delta-ac-max-analyzer --no-archive
 ```
 
 ## Command Line Options
 
 ```
-usage: analyze_charger_logs.py [-h] [-d DIRECTORY] [--skip-extraction] [--no-archive]
+usage: delta-ac-max-analyzer [-h] [-d DIRECTORY] [-z [FILE ...]] 
+                              [--skip-extraction] [--no-archive]
 
 Options:
   -h, --help            Show help message and exit
   -d, --directory DIR   Directory containing log ZIP files (default: current directory)
+  -z, --zip FILE [...]  Specific ZIP file(s) to extract and analyze
   --skip-extraction     Skip ZIP extraction, analyze existing folders only
   --no-archive          Do not move ZIP files to archive folder after extraction
+```
+
+## Examples
+
+```bash
+# Extract and analyze all ZIPs in current directory
+delta-ac-max-analyzer
+
+# Analyze one specific charger's logs
+delta-ac-max-analyzer -z EV01_before.zip
+
+# Compare before/after update for one charger
+delta-ac-max-analyzer -z EV01_before.zip EV01_after.zip
+
+# Analyze specific chargers from a batch
+delta-ac-max-analyzer -z EV01.zip EV05.zip EV12.zip
+
+# Work with logs in different directory
+delta-ac-max-analyzer -d C:\Charger_Logs
+
+# Analyze specific file from different directory
+delta-ac-max-analyzer -d /mnt/logs -z EV01_before.zip
+
+# Extract specific ZIPs but keep them in place
+delta-ac-max-analyzer -z EV01.zip EV02.zip --no-archive
+
+# Analyze already-extracted folders only
+delta-ac-max-analyzer --skip-extraction
 ```
 
 ## What the Script Detects

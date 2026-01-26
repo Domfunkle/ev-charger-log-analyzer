@@ -21,8 +21,8 @@ ev-charger-log-analyzer/
 
 ## Supported Chargers
 
-### ✅ Delta AC MAX
-**Status:** Production Ready  
+### 🚧 Delta AC MAX
+**Status:** In Development (v0.0.1)  
 **Script:** `analyzers/delta_ac_max/analyze.py`  
 **Documentation:** `docs/delta_ac_max_usage.md`
 
@@ -31,12 +31,14 @@ ev-charger-log-analyzer/
 - Detects backend connection failures
 - Identifies MCU communication errors
 - Finds logging gaps (missing log entries)
-- Extracts firmware versions
+- Extracts firmware versions and ChargBox IDs
 - Flags high error counts
 - Exports results to CSV
 
 **Platforms:** Windows, Linux, macOS  
 **Requirements:** Python 3.6+ (no external dependencies)
+
+**Note:** Still in active development, not production ready.
 
 ### 🔜 Wallbox 25kW DC
 **Status:** Planned  
@@ -52,12 +54,50 @@ ev-charger-log-analyzer/
 
 ## Quick Start
 
-### Delta AC MAX Chargers
-```bash
-# Navigate to your log directory
-cd /path/to/charger/logs
+### Installation
 
-# Run the analyzer
+Install the analyzer to make it available system-wide:
+
+```bash
+# Clone or navigate to the repository
+cd /path/to/ev-charger-log-analyzer
+
+# Install in editable/development mode
+pip install -e .
+
+# Or install normally
+pip install .
+```
+
+After installation, the `delta-ac-max-analyzer` command will be available from anywhere.
+
+### Delta AC MAX Chargers
+
+```bash
+# Analyze all ZIP files in current directory
+delta-ac-max-analyzer
+
+# Analyze a specific ZIP file
+delta-ac-max-analyzer -z EV01_before.zip
+
+# Analyze multiple specific ZIP files
+delta-ac-max-analyzer -z EV01.zip EV02.zip EV05.zip
+
+# Analyze logs in a specific directory
+delta-ac-max-analyzer --directory /path/to/charger/logs
+
+# Analyze specific ZIP in specific directory
+delta-ac-max-analyzer -d /path/to/logs -z EV01.zip
+
+# Analyze already-extracted logs (skip extraction)
+delta-ac-max-analyzer --skip-extraction
+
+# Don't move ZIPs to archive after extraction
+delta-ac-max-analyzer --no-archive
+```
+
+**Legacy Method (still works):**
+```bash
 python /path/to/ev-charger-log-analyzer/analyzers/delta_ac_max/analyze.py
 ```
 
@@ -124,13 +164,25 @@ When adding new analyzers:
 
 ## Version History
 
-### v1.0.0 (January 2026)
-- Initial release
-- Delta AC MAX analyzer (production ready)
-- Cross-platform Python implementation
+### v0.0.1 (January 2026) - Development Release
+**Status: In Development - Not Production Ready**
+
+- Initial development release
+- Delta AC MAX analyzer (in development)
+- System-wide installation via pip (`delta-ac-max-analyzer` command)
+- Selective ZIP file analysis with `-z/--zip` option
+- ChargBox ID extraction from Config/evcs file
 - Auto-extraction of password-protected logs
+- Backend disconnect, MCU error, and logging gap detection
+- Firmware version extraction
 - CSV export functionality
 - Color-coded console output
+- Cross-platform Python implementation (Windows, Linux, macOS)
+
+**Known Limitations:**
+- Still in active development
+- Limited production testing
+- May require adjustments based on field usage
 
 ## Author
 

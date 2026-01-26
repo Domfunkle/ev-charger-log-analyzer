@@ -1,0 +1,50 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Delta AC MAX Error Code Mapping
+Source: Delta ACMAX-TG-002-EN Error Mapping Document
+"""
+
+ERROR_CODES = {
+    'EV0081': {'desc': 'AC Input OVP', 'cause': 'Input voltage >265V', 'fix': 'Check/reduce input voltage'},
+    'EV0082': {'desc': 'AC Output OCP', 'cause': 'Output current exceeded (DIP/OCPP/Modbus mismatch)', 'fix': 'Align DIP switches, OCPP profile, Modbus 41601 to same max current'},
+    'EV0083': {'desc': 'AC Input UVP', 'cause': 'Input voltage <180V', 'fix': 'Check/increase input voltage'},
+    'EV0084': {'desc': 'Ambient OTP', 'cause': 'Ambient temperature too high', 'fix': 'Power off 10min, check ventilation'},
+    'EV0085': {'desc': 'RCD Fault (AC)', 'cause': 'Residual current detected', 'fix': 'Unplug gun, retry, check RCD module'},
+    'EV0086': {'desc': 'RCD Self-Test Fail', 'cause': 'RCD module fault', 'fix': 'Power cycle, replace RCD if persists'},
+    'EV0087': {'desc': 'Relay Welding', 'cause': 'Relay contacts stuck', 'fix': 'Power cycle, replace relay if persists'},
+    'EV0088': {'desc': 'GMI (Ground Monitor)', 'cause': 'Ground connection issue', 'fix': 'Check ground/PE connection'},
+    'EV0089': {'desc': 'Input Miswiring', 'cause': 'L1/L2/N incorrect', 'fix': 'Requires technician - verify wiring'},
+    'EV0090': {'desc': 'Terminal OTP', 'cause': 'Terminal temperature too high', 'fix': 'Power off 10min, check connections'},
+    'EV0091': {'desc': 'PWMP Error', 'cause': 'Pilot signal abnormal', 'fix': 'Check pilot signal with oscilloscope'},
+    'EV0092': {'desc': 'GUN PP Error', 'cause': 'Gun type error', 'fix': 'Check gun connector type'},
+    'EV0093': {'desc': 'GUN Motor Lock Fail', 'cause': 'Lock malfunction', 'fix': 'Power cycle, check lock status'},
+    'EV0094': {'desc': 'NTC Error', 'cause': 'Temperature sensor fault', 'fix': 'Replace NTC sensor'},
+    'EV0095': {'desc': 'MCU Self-Test Fail', 'cause': 'MCU hardware fault', 'fix': 'Replace MCU/board'},
+    'EV0096': {'desc': 'METER IC Fail', 'cause': 'Metering IC failure', 'fix': 'Replace meter module'},
+    'EV0097': {'desc': 'Relay Driving Fault', 'cause': 'Relay driver fault', 'fix': 'Power cycle, replace relay'},
+    'EV0098': {'desc': 'RCD DC Fault', 'cause': 'DC ground fault', 'fix': 'Unplug gun, retry, check RCD module'},
+    'EV0099': {'desc': 'AC Output SCP', 'cause': 'Short circuit detected', 'fix': 'Check max current, verify connections'},
+    'EV0100': {'desc': 'PWMN Error', 'cause': 'Pilot negative abnormal', 'fix': 'Check pilot signal with oscilloscope'},
+    'EV0101': {'desc': 'GUN Motor Unlock Fail', 'cause': 'Unlock malfunction', 'fix': 'Power cycle, check unlock status'},
+    'EV0102': {'desc': 'BT Abnormal', 'cause': 'Bluetooth module fault', 'fix': 'Disable BT or replace module'},
+    'EV0103': {'desc': 'LIMIT_toNoPower', 'cause': 'Power limiting active', 'fix': 'Informational - check power limits'},
+    'EV0104': {'desc': 'Emergency Stop', 'cause': 'Emergency button pressed', 'fix': 'Unplug gun, release emergency button'},
+    'EV0110': {'desc': 'Internal Comm Fail', 'cause': 'MPU-MCU comm broken', 'fix': 'Power cycle, check connections'},
+    'EV0111': {'desc': 'RFID Card Abnormal', 'cause': 'RFID reader fault', 'fix': 'Check RFID module'},
+    'EV0112': {'desc': 'WiFi Module Not OK', 'cause': 'WiFi init failed', 'fix': 'Power cycle, check module'},
+    'EV0113': {'desc': '3G Module Not OK', 'cause': 'Cellular init failed', 'fix': 'Check SIM, power cycle'},
+    'EV0114': {'desc': 'Memory Error', 'cause': 'Memory read/write error', 'fix': 'Power cycle, replace board'},
+    'EV0115': {'desc': 'Init Failed', 'cause': 'System init failure', 'fix': 'Power cycle, check firmware'},
+    'EV0116': {'desc': 'Rating Current Set Error', 'cause': 'Invalid current config', 'fix': 'Check DIP switch settings'},
+    'EV0117': {'desc': 'Backend Disconnect (Ethernet)', 'cause': 'Lost OCPP backend connection', 'fix': 'Check cable, switch, backend server'},
+    'EV0118': {'desc': 'Backend Disconnect (WiFi)', 'cause': 'Lost OCPP backend via WiFi', 'fix': 'Check WiFi signal, AP, backend'},
+    'EV0119': {'desc': 'Backend Disconnect (3G)', 'cause': 'Lost OCPP backend via cellular', 'fix': 'Check 3G signal, backend'},
+    'EV0120': {'desc': 'Internet Not OK (Ethernet)', 'cause': 'No internet via Ethernet', 'fix': 'Check router/gateway'},
+    'EV0121': {'desc': 'Internet Not OK (WiFi)', 'cause': 'No internet via WiFi', 'fix': 'Check AP internet connectivity'},
+    'EV0122': {'desc': 'Internet Not OK (3G)', 'cause': 'No internet via cellular', 'fix': 'Check APN, carrier service'},
+    'EV0123': {'desc': 'Disconnect from AP (WiFi)', 'cause': 'Lost WiFi AP connection', 'fix': 'Check signal, AP status, credentials'},
+    'EV0124': {'desc': 'Disconnect from APN (3G)', 'cause': 'Lost cellular APN', 'fix': 'Verify APN settings, SIM, carrier'},
+    'EV0125': {'desc': '3G Signal Weak', 'cause': 'Poor cellular coverage', 'fix': 'Relocate antenna, use external antenna'},
+    'EV0126': {'desc': 'WiFi Signal Weak', 'cause': 'Low WiFi signal strength', 'fix': 'Move closer to AP, reduce interference'},
+}

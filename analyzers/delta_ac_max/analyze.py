@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
+# -*- coding: utf-8 -*-
 """
 EV Charger Log Analysis Tool
 Author: Daniel Nathanson
-Version: 1.0
+Version: 0.0.1 (Development)
 Purpose: Automated analysis of EV charger logs for common issues
 
 Analyzes EV charger logs for:
@@ -14,13 +15,24 @@ Analyzes EV charger logs for:
 """
 
 import argparse
-import csv
 import re
-import zipfile
-from pathlib import Path
-from collections import defaultdict
-from datetime import datetime
 import sys
+from pathlib import Path
+
+# Fix Windows encoding issues with Unicode characters
+if sys.platform == 'win32':
+    try:
+        # Set UTF-8 encoding for stdout
+        sys.stdout.reconfigure(encoding='utf-8')
+    except AttributeError:
+        # Python < 3.7
+        import codecs
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.buffer, 'strict')
+
+# Import modular components
+from .detectors import EventDetector, OcppDetector, HardwareDetector, LmsDetector, StateMachineDetector
+from .reporter import Reporter
+from .utils import extract_zips
 
 
 class ChargerAnalyzer:
@@ -29,107 +41,98 @@ class ChargerAnalyzer:
     def __init__(self, log_directory=None):
         self.log_directory = Path(log_directory) if log_directory else Path.cwd()
         self.results = []
+        self.event_detector = EventDetector()
+        self.ocpp_detector = OcppDetector()
+        self.hardware_detector = HardwareDetector()
+        self.lms_detector = LmsDetector()
+        self.state_detector = StateMachineDetector()
         
-    def extract_zips(self, move_to_archive=True):
-        """Extract password-protected ZIP files using SERIAL@delta pattern"""
-        print("=" * 80)
-        print("EXTRACTING PASSWORD-PROTECTED ZIP FILES")
-        print("=" * 80)
-        print()
-        
-        zip_files = list(self.log_directory.glob("*.zip"))
-        
-        if not zip_files:
-            print("No ZIP files found in directory.")
-            return
-        
-        print(f"Found {len(zip_files)} ZIP files\n")
-        
-        success_count = 0
-        fail_count = 0
-        
-        for zip_file in zip_files:
-            # Extract serial number (14 characters after ']')
-            match = re.search(r'\]([A-Z0-9]{14})', zip_file.name)
-            
-            if not match:
-                print(f"⚠ Could not extract serial from: {zip_file.name}")
-                fail_count += 1
-                continue
-            
-            serial = match.group(1)
-            password = f"{serial}@delta"
-            dest_folder = self.log_directory / zip_file.stem
-            
-            print(f"Processing: {zip_file.name}")
-            print(f"  Serial: {serial}")
-            print(f"  Password: {password}")
-            print(f"  Destination: {dest_folder}")
-            
-            try:
-                # Create destination folder
-                dest_folder.mkdir(exist_ok=True)
-                
-                # Extract ZIP with password
-                with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-                    zip_ref.extractall(dest_folder, pwd=password.encode('utf-8'))
-                
-                print("  ✓ Extracted successfully\n")
-                success_count += 1
-                
-            except Exception as e:
-                print(f"  ✗ Extraction failed: {e}\n")
-                fail_count += 1
-        
-        print(f"\nExtraction Summary:")
-        print(f"  Successful: {success_count}")
-        print(f"  Failed: {fail_count}\n")
-        
-        # Move ZIPs to archive folder
-        if move_to_archive and success_count > 0:
-            archive_dir = self.log_directory / "Original Zips"
-            archive_dir.mkdir(exist_ok=True)
-            
-            print("Moving ZIP files to 'Original Zips' folder...")
-            for zip_file in self.log_directory.glob("*.zip"):
-                zip_file.rename(archive_dir / zip_file.name)
-            print("✓ ZIPs archived\n")
+    def extract_zips_wrapper(self, specific_files=None):
+        """Wrapper for extract_zips utility function"""
+        extract_zips(self.log_directory, specific_files)
     
     def analyze_charger_log(self, folder):
         """Analyze a single charger log folder"""
         # Extract charger info from folder name
         match = re.search(r'\]([A-Z0-9]{14})(.*)$', folder.name)
+        
         if not match:
             return None
         
         serial = match.group(1)
         suffix = match.group(2).strip()
         
-        # Extract EV number
-        ev_match = re.search(r'EV(\d+)', suffix)
-        ev_num = ev_match.group(1) if ev_match else "Unknown"
+        # Try to get ChargBox ID from Config/evcs file
+        chargebox_id = self.event_detector.get_chargebox_id(folder)
         
-        is_updated = "-UP" in suffix
+        # Determine display ID
+        if chargebox_id:
+            ev_num = chargebox_id
+        elif '[GetDiag]' in folder.name:
+            ev_num = serial
+        else:
+            ev_match = re.search(r'EV(\d+)', suffix)
+            ev_num = ev_match.group(1) if ev_match else serial
         
         system_log = folder / "Storage" / "SystemLog" / "SystemLog"
         
         if not system_log.exists():
             return None
         
+        # Initialize analysis result structure
         analysis = {
             'ev_number': ev_num,
             'serial': serial,
             'folder_name': folder.name,
-            'is_updated': is_updated,
+            'folder_path': str(folder),
             'firmware_version': None,
             'backend_disconnects': 0,
+            'backend_disconnect_examples': [],
             'mcu_errors': 0,
+            'mcu_error_examples': [],
             'error_count': 0,
             'logging_gaps': [],
             'issues': [],
-            'status': 'Clean'
+            'status': 'Clean',
+            'log_file': str(system_log),
+            'events': [],
+            'critical_events': [],
+            'charging_profile_timeouts': {'count': 0, 'examples': []},
+            'ocpp_rejections': {'total': 0, 'by_type': {}, 'examples': []},
+            'ng_flags': {'count': 0, 'examples': []},
+            'ocpp_timeouts': {'count': 0, 'examples': []},
+            'rfid_faults': {'count': 0, 'examples': []},
+            'state_transitions': {'transitions': [], 'invalid': [], 'suspicious': [], 'final_states': {}}
         }
         
+        # Run all detectors
+        events = self.event_detector.parse_events(folder)
+        analysis['events'] = events
+        
+        analysis['charging_profile_timeouts'] = self.ocpp_detector.detect_charging_profile_timeouts(folder)
+        analysis['ocpp_rejections'] = self.ocpp_detector.detect_ocpp_rejections(folder)
+        analysis['ng_flags'] = self.ocpp_detector.detect_ng_flags(folder)
+        analysis['ocpp_timeouts'] = self.ocpp_detector.detect_ocpp_timeouts(folder)
+        analysis['rfid_faults'] = self.hardware_detector.detect_rfid_faults(folder)
+        analysis['low_current_profiles'] = self.ocpp_detector.detect_low_current_profiles(folder)
+        analysis['lms_issues'] = self.lms_detector.detect_lms_issues(folder, self.event_detector.parse_events)
+        analysis['state_transitions'] = self.state_detector.parse_ocpp_state_transitions(folder)
+        
+        # Identify critical events
+        critical_codes = ['EV0081', 'EV0082', 'EV0083', 'EV0084', 'EV0085', 'EV0086', 'EV0087',
+                         'EV0088', 'EV0089', 'EV0090', 'EV0091', 'EV0092', 'EV0093', 'EV0094',
+                         'EV0095', 'EV0096', 'EV0097', 'EV0098', 'EV0099', 'EV0100', 'EV0101',
+                         'EV0110', 'EV0114', 'EV0115', 'EV0116']
+        critical_events = [e for e in events if e['code'] in critical_codes]
+        
+        # Add log context for each critical event
+        for event in critical_events:
+            context = self.event_detector.get_log_context(folder, event['timestamp'], window_minutes=5)
+            event['context'] = context
+        
+        analysis['critical_events'] = critical_events
+        
+        # Parse system log for baseline metrics
         try:
             with open(system_log, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
@@ -140,19 +143,21 @@ class ChargerAnalyzer:
             if fw_matches:
                 analysis['firmware_version'] = fw_matches[-1]
             
-            # Count backend disconnects
-            backend_fails = re.findall(r'Backend connection fail', content)
-            analysis['backend_disconnects'] = len(backend_fails)
+            # Count backend disconnects and get examples
+            backend_fail_lines = [line for line in lines if 'Backend connection fail' in line]
+            analysis['backend_disconnects'] = len(backend_fail_lines)
+            analysis['backend_disconnect_examples'] = backend_fail_lines[:3]
             
-            # Count MCU errors
-            mcu_errors = re.findall(r'Send Command 0x[0-9A-F]+ to MCU False', content)
-            analysis['mcu_errors'] = len(mcu_errors)
+            # Count MCU errors and get examples
+            mcu_error_lines = [line for line in lines if re.search(r'Send Command 0x[0-9A-Fa-f]+ to MCU False', line)]
+            analysis['mcu_errors'] = len(mcu_error_lines)
+            analysis['mcu_error_examples'] = mcu_error_lines[:3]
             
             # Count errors
             errors = re.findall(r'\bERROR\b|\berror\b', content)
             analysis['error_count'] = len(errors)
             
-            # Check for logging gaps (January dates only for simplicity)
+            # Check for logging gaps
             jan_dates = []
             for line in lines:
                 match = re.match(r'^Jan (\d+)', line)
@@ -168,7 +173,7 @@ class ChargerAnalyzer:
                         gap = f"Jan {jan_dates[i]} to Jan {jan_dates[i + 1]} ({diff} days)"
                         analysis['logging_gaps'].append(gap)
             
-            # Determine issues
+            # Determine issues and status
             if analysis['backend_disconnects'] > 10:
                 analysis['issues'].append(f"High backend disconnects: {analysis['backend_disconnects']}")
                 analysis['status'] = 'Issue'
@@ -186,6 +191,56 @@ class ChargerAnalyzer:
                 if analysis['status'] == 'Clean':
                     analysis['status'] = 'Warning'
             
+            if analysis['critical_events']:
+                analysis['issues'].append(f"Critical hardware events: {len(analysis['critical_events'])}")
+                analysis['status'] = 'Issue'
+            
+            if analysis['charging_profile_timeouts']['count'] > 100:
+                analysis['issues'].append(f"⚠️ CRITICAL: SetChargingProfile timeouts: {analysis['charging_profile_timeouts']['count']}")
+                analysis['status'] = 'Issue'
+            
+            if analysis['ocpp_rejections']['total'] > 5:
+                rejection_summary = ', '.join([f"{k}:{v}" for k, v in analysis['ocpp_rejections']['by_type'].items()])
+                analysis['issues'].append(f"OCPP rejections: {analysis['ocpp_rejections']['total']} ({rejection_summary})")
+                if analysis['ocpp_rejections']['total'] > 50:
+                    analysis['status'] = 'Issue'
+                elif analysis['status'] == 'Clean':
+                    analysis['status'] = 'Warning'
+            
+            if analysis['ng_flags']['count'] > 10:
+                analysis['issues'].append(f"NG flags (processing errors): {analysis['ng_flags']['count']}")
+                if analysis['status'] == 'Clean':
+                    analysis['status'] = 'Warning'
+            
+            if analysis['ocpp_timeouts']['count'] > 20:
+                analysis['issues'].append(f"OCPP timeouts: {analysis['ocpp_timeouts']['count']}")
+                if analysis['status'] == 'Clean':
+                    analysis['status'] = 'Warning'
+            
+            if analysis['rfid_faults']['count'] > 100:
+                analysis['issues'].append(f"⚠️ CRITICAL: RFID module fault: {analysis['rfid_faults']['count']} errors")
+                analysis['status'] = 'Issue'
+            
+            if analysis['low_current_profiles']['count'] > 10:
+                analysis['issues'].append(f"⚠️ Backend issue: {analysis['low_current_profiles']['count']} low-current profiles (<6A), {analysis['low_current_profiles']['zero_current']} near-zero")
+                if analysis['status'] == 'Clean':
+                    analysis['status'] = 'Warning'
+            
+            if analysis['lms_issues']['load_mgmt_comm_errors'] > 5 or analysis['lms_issues']['limit_to_nopower_count'] > 0:
+                analysis['issues'].append(f"⚠️ LMS issue: {analysis['lms_issues']['load_mgmt_comm_errors']} comm errors, {analysis['lms_issues']['limit_to_nopower_count']} LIMIT_toNoPower events")
+                if analysis['status'] == 'Clean':
+                    analysis['status'] = 'Warning'
+            
+            if analysis['state_transitions']['invalid']:
+                analysis['issues'].append(f"OCPP protocol violations: {len(analysis['state_transitions']['invalid'])}")
+                if analysis['status'] == 'Clean':
+                    analysis['status'] = 'Warning'
+            
+            if len(analysis['state_transitions']['suspicious']) > 5:
+                analysis['issues'].append(f"Suspicious state transitions: {len(analysis['state_transitions']['suspicious'])}")
+                if analysis['status'] == 'Clean':
+                    analysis['status'] = 'Warning'
+        
         except Exception as e:
             print(f"Error analyzing {folder.name}: {e}")
             return None
@@ -214,113 +269,15 @@ class ChargerAnalyzer:
             
             if analysis:
                 self.results.append(analysis)
-                
-                status_color = {
-                    'Issue': '\033[91m',      # Red
-                    'Warning': '\033[93m',    # Yellow
-                    'Clean': '\033[92m'       # Green
-                }.get(analysis['status'], '')
-                
-                reset_color = '\033[0m'
-                
-                print(f"  EV{analysis['ev_number']}: {status_color}{analysis['status']}{reset_color}")
-                
-                if analysis['issues']:
-                    for issue in analysis['issues']:
-                        print(f"    - {issue}")
+                Reporter.generate_per_charger_summary(analysis)
+            
+            print()
         
         return self.results
     
     def generate_summary_report(self):
-        """Generate and display summary report"""
-        if not self.results:
-            print("\nNo results to display.")
-            return
-        
-        print("\n" + "=" * 80)
-        print("SUMMARY REPORT")
-        print("=" * 80)
-        print()
-        
-        # Group by EV number
-        grouped = defaultdict(list)
-        for result in self.results:
-            grouped[result['ev_number']].append(result)
-        
-        clean_count = 0
-        issue_count = 0
-        
-        for ev_num in sorted(grouped.keys(), key=lambda x: int(x) if x.isdigit() else 999):
-            chargers = sorted(grouped[ev_num], key=lambda x: not x['is_updated'])
-            
-            has_issues = any(c['status'] != 'Clean' for c in chargers)
-            
-            color = '\033[93m' if has_issues else '\033[92m'  # Yellow or Green
-            reset = '\033[0m'
-            
-            print(f"{color}EV{ev_num.zfill(2)}{reset}")
-            
-            if has_issues:
-                issue_count += 1
-            else:
-                clean_count += 1
-            
-            for charger in chargers:
-                label = "  [AFTER UPDATE]" if charger['is_updated'] else "  [BEFORE UPDATE]"
-                print(label)
-                
-                if charger['firmware_version']:
-                    print(f"    Firmware: {charger['firmware_version']}")
-                
-                print(f"    Backend Disconnects: {charger['backend_disconnects']}")
-                print(f"    MCU Errors: {charger['mcu_errors']}")
-                
-                if charger['logging_gaps']:
-                    print(f"    Logging Gaps: {', '.join(charger['logging_gaps'])}")
-                
-                if charger['issues']:
-                    print("    Issues:")
-                    for issue in charger['issues']:
-                        print(f"      - {issue}")
-            
-            print()
-        
-        print("=" * 80)
-        print("FINAL SUMMARY")
-        print("=" * 80)
-        print(f"Total Chargers Analyzed: {len(grouped)}")
-        print(f"\033[92mClean: {clean_count}\033[0m")
-        
-        issue_color = '\033[91m' if issue_count > 0 else '\033[92m'
-        print(f"{issue_color}With Issues: {issue_count}\033[0m")
-        print()
-    
-    def export_to_csv(self, filename=None):
-        """Export results to CSV file"""
-        if not self.results:
-            return
-        
-        if filename is None:
-            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            filename = f"ChargerAnalysisResults_{timestamp}.csv"
-        
-        csv_path = self.log_directory / filename
-        
-        with open(csv_path, 'w', newline='', encoding='utf-8') as f:
-            fieldnames = ['ev_number', 'serial', 'folder_name', 'is_updated', 
-                         'firmware_version', 'backend_disconnects', 'mcu_errors', 
-                         'error_count', 'logging_gaps', 'issues', 'status']
-            
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            
-            for result in self.results:
-                row = result.copy()
-                row['logging_gaps'] = '; '.join(row['logging_gaps'])
-                row['issues'] = '; '.join(row['issues'])
-                writer.writerow(row)
-        
-        print(f"Detailed results exported to: {csv_path}")
+        """Generate and display summary report using Reporter"""
+        Reporter.generate_summary_report(self.results)
 
 
 def main():
@@ -330,26 +287,28 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog='''
 Examples:
-  %(prog)s                              # Extract ZIPs and analyze in current directory
-  %(prog)s --skip-extraction            # Analyze already-extracted logs
-  %(prog)s --directory /path/to/logs    # Use specific directory
-  %(prog)s --no-archive                 # Don't move ZIPs after extraction
+  %(prog)s                                    # Extract all ZIPs and analyze in current directory
+  %(prog)s -z EV01_before.zip                 # Extract and analyze a specific ZIP file
+  %(prog)s -z EV01.zip EV02.zip               # Extract and analyze multiple specific ZIPs
+  %(prog)s --skip-extraction                  # Analyze already-extracted logs only
+  %(prog)s --directory /path/to/logs          # Use specific directory
+  %(prog)s -d /path/to/logs -z EV01.zip       # Analyze specific ZIP in specific directory
         '''
     )
     
     parser.add_argument('-d', '--directory', 
                        help='Directory containing log ZIP files (default: current directory)')
+    parser.add_argument('-z', '--zip', nargs='*', metavar='FILE',
+                       help='Specific ZIP file(s) to extract and analyze. Can be relative or absolute paths.')
     parser.add_argument('--skip-extraction', action='store_true',
                        help='Skip ZIP extraction, analyze existing folders only')
-    parser.add_argument('--no-archive', action='store_true',
-                       help='Do not move ZIP files to archive folder after extraction')
     
     args = parser.parse_args()
     
     # Print header
     print("\n")
     print("╔═══════════════════════════════════════════════════════════════╗")
-    print("║          EV CHARGER LOG ANALYSIS TOOL v1.0                   ║")
+    print("║      EV CHARGER LOG ANALYSIS TOOL v0.0.1 (Development)        ║")
     print("╚═══════════════════════════════════════════════════════════════╝")
     print("\n")
     
@@ -360,16 +319,24 @@ Examples:
     
     # Extract ZIPs if not skipped
     if not args.skip_extraction:
-        zip_files = list(analyzer.log_directory.glob("*.zip"))
-        if zip_files:
-            analyzer.extract_zips(move_to_archive=not args.no_archive)
+        if args.zip is not None:
+            # User specified specific zip file(s)
+            if len(args.zip) == 0:
+                print("Error: --zip requires at least one file argument")
+                print("Usage: --zip FILE1.zip [FILE2.zip ...]")
+                sys.exit(1)
+            analyzer.extract_zips_wrapper(specific_files=args.zip)
+        else:
+            # Default behavior: extract all zips in directory
+            zip_files = list(analyzer.log_directory.glob("*.zip"))
+            if zip_files:
+                analyzer.extract_zips_wrapper()
     
     # Analyze all chargers
     analyzer.analyze_all_chargers()
     
     # Generate reports
     analyzer.generate_summary_report()
-    analyzer.export_to_csv()
     
     print("\nAnalysis complete!\n")
 

@@ -18,30 +18,90 @@ Python script for automated analysis of Delta AC MAX charger logs.
 - Python 3.6 or higher
 - No external dependencies (uses Python standard library only)
 
-## Usage
+## Installation
 
-### Basic Usage
+### Recommended: Install System-Wide
+
 ```bash
-# Navigate to directory containing charger log ZIPs
-cd /path/to/logs
+# Navigate to project root
+cd /path/to/ev-charger-log-analyzer
 
-# Run the analyzer
+# Install in editable mode (recommended for development)
+pip install -e .
+
+# OR install normally
+pip install .
+```
+
+After installation, use the `delta-ac-max-analyzer` command from anywhere.
+
+### Alternative: Direct Script Execution
+
+```bash
+# Run script directly (no installation needed)
 python ~/dev/ev-charger-log-analyzer/analyzers/delta_ac_max/analyze.py
 ```
 
+## Usage
+
+### Basic Usage
+
+```bash
+# Extract and analyze all ZIPs in current directory
+delta-ac-max-analyzer
+
+# Navigate to directory containing charger log ZIPs first
+cd /path/to/logs
+delta-ac-max-analyzer
+```
+
+### Analyze Specific ZIP Files
+
+```bash
+# Analyze a single specific ZIP file
+delta-ac-max-analyzer -z EV01_before.zip
+
+# Analyze multiple specific ZIP files
+delta-ac-max-analyzer -z EV01_before.zip EV01_after.zip EV05_before.zip
+
+# Analyze specific ZIP in a different directory
+delta-ac-max-analyzer -d /path/to/logs -z EV01_before.zip
+```
+
 ### Command Line Options
+
 ```bash
 # Skip extraction if logs already extracted
-python analyze.py --skip-extraction
+delta-ac-max-analyzer --skip-extraction
 
 # Specify custom directory
-python analyze.py --directory /path/to/logs
+delta-ac-max-analyzer --directory /path/to/logs
+delta-ac-max-analyzer -d /path/to/logs
+
+# Analyze specific ZIP file(s)
+delta-ac-max-analyzer -z FILE1.zip [FILE2.zip ...]
 
 # Don't move ZIPs to archive folder
-python analyze.py --no-archive
+delta-ac-max-analyzer --no-archive
 
 # Show help
-python analyze.py --help
+delta-ac-max-analyzer --help
+```
+
+### Examples
+
+```bash
+# Compare before/after firmware update for one charger
+delta-ac-max-analyzer -z EV01_before.zip EV01_after.zip
+
+# Analyze only chargers with known issues
+delta-ac-max-analyzer -z EV03.zip EV07.zip EV12.zip
+
+# Batch analyze all ZIPs in a specific directory
+delta-ac-max-analyzer -d /mnt/charger_logs
+
+# Analyze already extracted logs without re-extracting
+delta-ac-max-analyzer --skip-extraction
 ```
 
 ## Log File Structure
@@ -109,7 +169,7 @@ Columns:
 
 ```
 ╔═══════════════════════════════════════════════════════════════╗
-║          EV CHARGER LOG ANALYSIS TOOL v1.0                   ║
+║          EV CHARGER LOG ANALYSIS TOOL v1.1                    ║
 ╚═══════════════════════════════════════════════════════════════╝
 
 Working Directory: /path/to/charger_logs
@@ -118,11 +178,12 @@ Working Directory: /path/to/charger_logs
 EXTRACTING PASSWORD-PROTECTED ZIP FILES
 ================================================================================
 
-Found 28 ZIP files
+Found 2 ZIP file(s) to extract
 
 Processing: [2026.01.22-02.02]KKB233100447WEEV9.zip
   Serial: KKB233100447WE
   Password: KKB233100447WE@delta
+  Destination: /path/to/charger_logs/[2026.01.22-02.02]KKB233100447WEEV9
   ✓ Extracted successfully
 
 ...
@@ -183,9 +244,25 @@ Pattern: `"Backend connection success"` after brief disconnect is normal
 
 ## Version
 
-**Version:** 1.0  
+**Version:** 0.0.1 (Development)  
 **Last Updated:** January 26, 2026  
-**Author:** Daniel Nathanson
+**Author:** Daniel Nathanson  
+**Status:** In Development - Not Production Ready
+
+**Current Features:**
+- ChargBox ID extraction from Config/evcs
+- System-wide installation via pip
+- Selective ZIP file analysis
+- Backend disconnect detection
+- MCU error detection
+- Logging gap detection
+- Firmware version extraction
+- CSV export
+
+**Known Limitations:**
+- Still in active development
+- Limited production testing
+- May require refinements based on field usage
 
 ## Full Documentation
 
