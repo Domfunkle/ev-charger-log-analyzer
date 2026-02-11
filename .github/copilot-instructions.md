@@ -25,7 +25,7 @@ You are a specialized agent for the **EV Charger Log Analyzer** project. Your pr
 
 ## Project Structure
 
-**Last Updated:** 2026-01-26 (Post-Modular Refactoring)
+**Last Updated:** 2026-02-11 (RTC Reset Detection + 3-min Gap Threshold)
 
 ```
 ev-charger-log-analyzer/
@@ -36,11 +36,13 @@ ev-charger-log-analyzer/
 │       ├── reporter.py             (~278 lines - TUI output)
 │       ├── utils.py                (~109 lines - ZIP extraction)
 │       ├── detectors/              (detection modules)
-│       │   ├── events.py           (~167 lines - event parsing)
-│       │   ├── ocpp.py             (~281 lines - OCPP protocol)
-│       │   ├── hardware.py         (~59 lines - hardware faults)
-│       │   ├── lms.py              (~80 lines - Load Management)
-│       │   └── state_machine.py    (~144 lines - state transitions)
+│       │   ├── events.py           (~166 lines - event parsing)
+│       │   ├── ocpp.py             (~336 lines - OCPP protocol)
+│       │   ├── hardware.py         (~446 lines - ⚠️ NEEDS SPLIT - hardware faults + RTC)
+│       │   ├── firmware.py         (~251 lines - firmware detection)
+│       │   ├── lms.py              (~203 lines - Load Management)
+│       │   ├── ocpp_transactions.py (~340 lines - transaction analysis)
+│       │   └── state_machine.py    (~143 lines - state transitions)
 │       └── README.md
 ├── .github/
 │   ├── copilot-instructions.md     (THIS FILE - master index)
@@ -61,6 +63,14 @@ ev-charger-log-analyzer/
 - **Modularity First:** No file >300 lines (code) or >500 lines (docs)
 - **Single Responsibility:** Each module focuses on one category
 - **Easy Extension:** Add new detectors without breaking existing code
+
+**⚠️ Technical Debt (as of 2026-02-11):**
+- `hardware.py` (446 lines) - Exceeds 300-line limit, needs split into:
+  - `hardware_faults.py` (RFID, MCU, network)
+  - `reboot_detection.py` (RTC reset, gap analysis, SystemLog failures)
+- `learning_history.md` (1062 lines) - Exceeds 500-line limit, needs archive/split:
+  - Keep recent versions (v0.0.8+) in main file
+  - Move older versions to `learning_history_archive.md`
 
 ---
 
@@ -121,6 +131,7 @@ Always ensure:
 
 ### 📖 Case Studies (Real-World Scenarios)
 - **[Federation University](knowledge-base/case-studies/federation_university.md)** - Dual-source limiting + RFID failure (July-Dec 2024)
+- **[EVS09 SystemLog Failure](knowledge-base/case-studies/evs09_systemlog_failure.md)** - 17-day logging gap analysis (Jan-Feb 2026)
 
 ### 🛠️ Development Guides (How-To)
 - **[Pattern Detection](knowledge-base/development/pattern_detection.md)** - How to add new patterns (step-by-step)
@@ -273,7 +284,8 @@ knowledge-base/
 │   ├── hardware_faults.md          (RFID, MCU, network)
 │   └── state_transitions.md        (state machine)
 ├── case-studies/                   (real-world scenarios)
-│   └── federation_university.md    (dual-source + RFID fault)
+│   ├── federation_university.md    (dual-source + RFID fault)
+│   └── evs09_systemlog_failure.md  (SystemLog gap w/ OCPP active)
 └── development/                    (how-to guides)
     ├── pattern_detection.md        (add new patterns)
     ├── modularity_guidelines.md    (organization)
@@ -321,7 +333,9 @@ knowledge-base/
 
 ---
 
-**Last Updated:** 2026-01-26 (Post-Knowledge Base Modularization)  
-**Lines:** ~280 (was 1,535 before refactoring)  
-**Knowledge:** 11 modular documents (~1,900 lines total, organized and cross-linked)  
-**Philosophy:** "Modularity first - both code and knowledge"
+**Last Updated:** 2026-02-11 (RTC Reset False Positives Fixed)  
+**Lines:** ~328  
+**Knowledge:** 14 modular documents (~5,400 lines total, organized and cross-linked)  
+**Philosophy:** "Modularity first - both code and knowledge"  
+
+**⚠️ Action Required:** Split `learning_history.md` (1062 lines) and `hardware.py` (446 lines) to meet modularity guidelines

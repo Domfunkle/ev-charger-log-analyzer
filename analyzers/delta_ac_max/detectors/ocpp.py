@@ -6,12 +6,48 @@ OCPP-related detection for Delta AC MAX charger logs
 
 from __future__ import annotations
 import re
+import json
 from pathlib import Path
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Set, Tuple
+from collections import OrderedDict
 
 
 class OcppDetector:
     """Detector for OCPP protocol issues"""
+    
+    @staticmethod
+    def _infer_year_from_rtc_static(month, day, rtc_syncs):
+        """Static helper to infer year from RTC syncs
+        
+        Args:
+            month: Month number (1-12)
+            day: Day of month
+            rtc_syncs: List of RTC sync anchor points
+            
+        Returns:
+            Inferred year
+        """
+        from datetime import datetime
+        
+        if not rtc_syncs:
+            # Fallback: assume recent log (within last 2 years)
+            current_year = datetime.now().year
+            return current_year
+        
+        # Find nearest RTC sync
+        best_match = None
+        for sync in rtc_syncs:
+            if sync['log_month'] == month and sync['log_day'] == day:
+                best_match = sync
+                break
+            elif sync['log_month'] < month or (sync['log_month'] == month and sync['log_day'] <= day):
+                best_match = sync
+        
+        if best_match:
+            return best_match['actual_year']
+        
+        # Use earliest RTC sync year as baseline
+        return rtc_syncs[0]['actual_year']
     
     @staticmethod
     def detect_charging_profile_timeouts(folder: Path) -> Dict[str, Any]:

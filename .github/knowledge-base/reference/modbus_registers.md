@@ -42,6 +42,52 @@
 - **Purpose:** Overall maximum power limit for charger
 - **Charger Behavior:** Uses MINIMUM of: DIP switches, OCPP profile, Modbus Power Limit
 - **Recommended:** `0xFFFF` to let DIP switches control maximum current
+- **Default Value:** UNKNOWN - may be 0 on fresh chargers or after certain operations
+- **Mystery (2026-02-11):** Some chargers show 0 in Config/evcs without user ever writing to registers. Investigation ongoing to determine:
+  - Factory default value (0 vs 0xFFFF)?
+  - Does firmware initialization write 0?
+  - Does first boot/setup wizard set this?
+  - Does absence of LMS trigger default 0?
+  
+## Default Register Values (UNCERTAIN)
+
+**Known Issue:** Default values for Modbus registers are **not documented** by Delta.
+
+**Observed Behavior:**
+- **Most chargers:** u32ModbusPowerLimit = 4294967295 (0xFFFFFFFF) in Config/evcs
+- **Some chargers:** u32ModbusPowerLimit = 0 (cause unknown)
+- **Some chargers:** No Modbus configuration present at all
+
+**Theories:**
+1. **Factory default = 0** → User must explicitly configure for LMS use
+2. **Factory default = 0xFFFF** → 0 indicates someone wrote to registers
+3. **Firmware-dependent** → Different firmware versions have different defaults
+4. **Configuration wizard** → First-boot setup may set values based on user selections
+
+**Investigation Status (2026-02-11):** 
+- Field case KKB233100369WE has 0 values causing issues
+- Field case KKB233100447WE (EVS09) also has MAX/MIN = 0, but PowerLimit/FallbackLimit = 0xFFFF (working correctly)
+- **CONCLUSION:** MAX/MIN Power registers appear to be **deprecated/informational only**
+- **PRIMARY controls:** u32ModbusPowerLimit and u32ModbusFallbackLimit
+- Testing register writes to confirm 0 in PowerLimit is causing LIMIT_toNoPower events
+
+## Register Priority (Updated 2026-02-11)
+
+**Based on field observations from multiple chargers:**
+
+**PRIMARY Registers (Actually Control Charging):**
+1. **u32ModbusPowerLimit (41601-41602)** - This is the ACTIVE power limit
+2. **u32ModbusFallbackLimit (40204-40205)** - Fallback when timeout occurs
+
+**SECONDARY/Informational Registers (Appear Unused):**
+3. **u32ModbusMAXPower** - Observed at 0 on working chargers
+4. **u32ModbusMINPower** - Observed at 0 on working chargers
+
+**Evidence:**
+- Charger KKB233100447WE: MAX=0, MIN=0, PowerLimit=4294967295 → **Works perfectly**
+- Charger KKB233100369WE: MAX=0, MIN=0, PowerLimit=0 → **Fails with LIMIT_toNoPower**
+
+**Analyzer Updated (v0.0.6):** Detection now focuses on PowerLimit and FallbackLimit only
 
 ## Recommended Configurations
 
@@ -125,6 +171,43 @@ Ask the customer:
 5. "Is there a local load management system installed?"
 6. "Was there previously an LMS that was removed?"
 
+### Automated Detection (Since v0.0.5)
+
+The analyzer now automatically detects Modbus misconfiguration by parsing Config/evcs file:
+
+**Detection Pattern:**
+```python
+# Checks for:
+- u32ModbusMAXPower = 0  (0W maximum - CRITICAL)
+- u32ModbusMINPower = 0  (0W minimum - CRITICAL)
+- u32ModbusFallbackLimit = 0 with timeout enabled
+- Any power limits < 1380W (below 6A @ 230V minimum)
+```
+
+**Terminal Output:**
+```
+🔴 CRITICAL: Modbus Misconfiguration
+  Issue: ModbusMAXPower=0W (charger cannot deliver power)
+  • ModbusMAXPower: 0 W
+  • ModbusMINPower: 0 W
+  • FallbackLimit: 4294967295 W
+  Recommended Fix:
+   • Factory reset to remove LMS config, OR
+   • Set ModbusMAXPower = 4294967295 (0xFFFFFFFF = MAX)
+   • Set FallbackLimit ≥ 1380W (6A minimum per IEC 61851-1)
+```
+
+**CSV Export Fields:**
+- `Modbus_Configured`: True/False
+- `Modbus_Misconfigured`: True/False
+- `Modbus_MAX_Power`: Watts (or empty if not configured)
+- `Modbus_MIN_Power`: Watts (or empty if not configured)
+- `Modbus_Issue`: Description of misconfiguration
+
+**Implementation:** `detectors/lms.py` - `detect_modbus_config_issues()` (~125 lines)
+
+**Field Case:** KKB233100369WE (2026-02-11) - Discovered partial LMS config with 0W limits causing 93 LIMIT_toNoPower events
+
 ### How to Check Registers
 
 Use Modbus RTU tool to read registers:
@@ -149,19 +232,66 @@ Expected values for standalone operation:
 3. Read registers 40202-40204, 41601 to confirm defaults
 4. Test charger standalone (no Modbus connected)
 
-### Method 2: Modbus Write (More Reliable)
-1. Connect Modbus RTU tool to charger
-2. Write recommended values:
+### Method 2: Modbus Write (More Reliable - Preferred)
+
+**This is the recommended approach for verifying and fixing the issue.**
+
+#### Step-by-Step Procedure
+
+1. **Identify the issue** from Config/evcs file:
+   - Compare against known-good charger config
+   - Look for `u32ModbusPowerLimit='0'` (should be `'4294967295'`)
+   - Check `u32ModbusMINPower` and `u32ModbusMAXPower` values
+
+2. **Connect Modbus RTU tool** to charger (RS-485)
+
+3. **Write maximum values to all power limit registers:**
+   
+   Each register must be set to: **0xFFFF = 65535 decimal = 1111111111111111 binary**
+   
    ```
-   Write 40202 = 0x0000
-   Write 40203 = 0x0258 (optional, timeout disabled anyway)
-   Write 40204 = 0xFFFF (high byte)
-   Write 40205 = 0xFFFF (low byte)
-   Write 41601 = 0xFFFF (high byte)
-   Write 41602 = 0xFFFF (low byte)
+   Function Code: 0x06 (Write Single Register) or 0x10 (Write Multiple Registers)
+   
+   Register 40204 = 0xFFFF  (Fallback Power - high byte)
+   Register 40205 = 0xFFFF  (Fallback Power - low byte)
+   Register 41601 = 0xFFFF  (Power Limit - high byte)
+   Register 41602 = 0xFFFF  (Power Limit - low byte)
    ```
-3. Power cycle charger
-4. Verify charger starts charging
+   
+   **Note:** These are UINT32 values split across 2 consecutive registers:
+   - 40204-40205 = 0xFFFFFFFF = 4294967295 (maximum 32-bit unsigned value)
+   - 41601-41602 = 0xFFFFFFFF = 4294967295
+
+4. **Optional: Disable timeout** (if enabled):
+   ```
+   Register 40202 = 0x0000  (Timeout disabled)
+   ```
+
+5. **Power cycle charger** (turn off, wait 10 seconds, turn on)
+
+6. **Test charging:**
+   - Plug in vehicle
+   - Start session (RFID or app)
+   - Verify charger enters "Charging" state and delivers power
+   
+7. **Verify fix** by re-analyzing logs:
+   ```bash
+   delta-ac-max-analyzer -z charger_after_fix.zip
+   ```
+   - Should show: `Modbus_Misconfigured: False`
+   - LIMIT_toNoPower events should stop occurring
+
+#### Field Troubleshooting Notes (2026-02-11)
+
+**Diagnostic Question to Customer:**
+> "I have checked logs from many other chargers and noted from the Config > evcs file that the u32ModbusPowerLimit was set to 4294967295 (maximum value). Your logs show this value as 0. Can you please write to the following registers all binary 1s (0xFFFF = 65535)?"
+
+**Why This Approach:**
+- Tests if Modbus misconfiguration is the root cause before deeper investigation
+- Verifies customer's Modbus tool is working correctly
+- Non-destructive (easily reversible)
+- Faster than factory reset
+- Confirms registers can be written (rules out hardware issues)
 
 ### Method 3: Physical LMS Disconnection + Reset
 1. Physically disconnect Modbus RS-485 cable from charger

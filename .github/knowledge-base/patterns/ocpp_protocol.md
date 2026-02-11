@@ -367,28 +367,25 @@ When backend sends `SetChargingProfile` with current limit **<6.0A**:
 
 ---
 
-## TODO: Further Study Needed
+## Complete OCPP 1.6 Message Catalog
 
-When OCPP 1.6 PDF specification is accessible, study:
+**For complete message reference** (all 43 actions, enumerations, configuration keys), see:  
+**→ [OCPP Messages Reference](../reference/ocpp_messages_reference.md)**
 
-- [ ] Complete message flow diagrams
-- [ ] State transition rules (when is each state allowed?)
-- [ ] Timeout requirements (how long should responses take?)
-- [ ] Error handling requirements (retry logic, etc.)
-- [ ] Heartbeat and connection management details
-- [ ] Transaction lifecycle (proper start/stop sequences)
-- [ ] Authorization flows (RFID, app, pre-auth, etc.)
-- [ ] Meter value reporting requirements
-- [ ] Firmware update flows (GetDiagnostics, UpdateFirmware)
+**Quick Summary:**
+- **43 OCPP Actions** (14 Charger→Backend, 29 Backend→Charger)
+- **16 ChargePointErrorCode** values
+- **22 Measurand** types (meter values)
+- **11 StopTransaction.reason** codes
+- **33 Configuration Keys** (Core Profile)
 
-**Resources:**
-- `docs/v16/ocpp-1.6.pdf` - Main specification
-- `docs/v16/ocpp-j-1.6-specification.pdf` - JSON implementation
-- `docs/v16/ocpp-1.6-errata-sheet.pdf` - Known issues/corrections
+---
 
 ---
 
 **Related Knowledge:**
+- [OCPP Messages Reference](../reference/ocpp_messages_reference.md) - Complete OCPP 1.6 message catalog
+- [OCPP Fault Patterns](../reference/ocpp_fault_patterns.md) - Common faults from errata sheets
 - [Current Limiting](current_limiting.md) - SetChargingProfile <6A behavior
 - [State Transitions](state_transitions.md) - OCPP state machine validation
 - [Firmware Bugs](../reference/firmware_bugs.md) - SetChargingProfile timeout bug
@@ -398,4 +395,5 @@ When OCPP 1.6 PDF specification is accessible, study:
 ---
 
 **Last Updated:** 2026-01-26  
-**Source:** OCPP 1.6 spec, field cases, Delta AC MAX logs
+**Source:** OCPP 1.6 spec, mobilityhouse/ocpp, Delta AC MAX field cases  
+**Lines:** ~380 (practical patterns only - see references for complete catalog)

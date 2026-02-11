@@ -19,6 +19,9 @@ def extract_zips(log_directory, specific_files=None):
         log_directory: Base directory for log files (Path object)
         specific_files: Optional list of specific zip file paths to extract.
                       If None, extracts all zips in log_directory.
+    
+    Returns:
+        List of Path objects for successfully extracted folders
     """
     print("=" * 80)
     print("EXTRACTING PASSWORD-PROTECTED ZIP FILES")
@@ -44,24 +47,30 @@ def extract_zips(log_directory, specific_files=None):
     
     if not zip_files:
         print("No ZIP files found to extract.")
-        return
+        return []
     
     print(f"Found {len(zip_files)} ZIP file(s) to extract\n")
     
     success_count = 0
     fail_count = 0
+    extracted_folders = []
     
     for zip_file in zip_files:
-        # Extract serial number - handles two formats:
+        # Extract serial number - handles three formats:
         # 1. Standard: [2025.11.10-00.37]KKB241600073WE.zip
         # 2. GetDiagnostics: 20250908060735_KKB233100604WE_v01.26.38.00_OCPP16JDiag.zip
+        # 3. Serial-first: KKB240500105WE_v01.26.38.00_OCPP16JDiag.zip
         
-        # Try standard format first
+        # Try standard format first (serial after bracket)
         match = re.search(r'\]([A-Z0-9]{14})', zip_file.name)
         
-        # Try GetDiagnostics format if standard didn't match
+        # Try GetDiagnostics format (serial between underscores)
         if not match:
             match = re.search(r'_([A-Z0-9]{14})_', zip_file.name)
+        
+        # Try serial-first format (serial at start of filename)
+        if not match:
+            match = re.search(r'^([A-Z0-9]{14})_', zip_file.name)
         
         if not match:
             print(f"⚠ Could not extract serial from: {zip_file.name}")
@@ -99,11 +108,16 @@ def extract_zips(log_directory, specific_files=None):
             
             print("  ✓ Extracted successfully\n")
             success_count += 1
+            extracted_folders.append(dest_folder)
             
         except Exception as e:
             print(f"  ✗ Extraction failed: {e}\n")
             fail_count += 1
     
-    print(f"\nExtraction Summary:")
+    print()
+    print("Extraction Summary:")
     print(f"  Successful: {success_count}")
-    print(f"  Failed: {fail_count}\n")
+    print(f"  Failed: {fail_count}")
+    print()
+    
+    return extracted_folders

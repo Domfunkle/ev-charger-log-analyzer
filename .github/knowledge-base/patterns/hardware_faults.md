@@ -514,6 +514,58 @@ Jul 20 03:30:38.456 OpenWrt user.info : [IntComm] Send Command 0x102 to MCU
 
 ---
 
+## RTC Reset & Clock Correction
+
+### Overview
+
+**Issue:** RTC (Real-Time Clock) resets to firmware build date when power lost without RTC battery backup  
+**Severity:** LOW - Self-correcting via NTP, but creates false positives in gap detection  
+**Detection:** Requires RTC correction extraction to get real timestamps
+
+### Default Reset Timestamps
+
+**Common Patterns:**
+- `Jul 20 03:30:XX` - Most common (firmware build circa Jul 20 2025)
+- `Oct 15 04:39:XX` - Alternative reset timestamp  
+- `Jan 1 00:00:XX` - Factory default
+
+### RTC Correction Pattern
+
+When charger boots with network connectivity:
+```
+Jul 20 03:30:36  Charger Starting
+Jul 20 03:30:37  ...boot sequence...
+Jul 20 03:30:46  Get RTC Info: 2024.08.13-20:40:57  ← Real timestamp
+```
+
+The "Get RTC Info" message contains the **actual timestamp** (corrected via NTP/backend).
+
+### Detection Strategy
+
+**CRITICAL:** RTC reset timestamps are **fake** (firmware build date), not event times.
+
+1. Identify RTC reset pattern: `Jul 20|Oct 15|Jan 1`
+2. Look ahead 20 lines for `Get RTC Info: YYYY.MM.DD-HH:MM:SS`
+3. Use corrected timestamp for gap calculations
+4. **Skip entries without correction** (prevents false 24-day gaps)
+
+**Minimum Gap Threshold:** Only count gaps ≥3 minutes as power loss (filters boot sequences)
+
+### Impact on Analysis
+
+**Before RTC Filtering:**
+- False 24-day gaps: `Jul 20 2025 → Aug 13 2024` 
+- 50% of systemlog_failure detections were false positives
+
+**After RTC Filtering:**
+- Accurate gap calculations using corrected timestamps
+- Boot sequences (<3 min) filtered out
+- Only meaningful power losses (≥3 min) reported
+
+**See:** [Learning History v0.0.9](../development/learning_history.md) for implementation details
+
+---
+
 **Related Knowledge:**
 - [Error Codes](../reference/error_codes.md) - Hardware fault error codes
 - [OCPP Protocol](ocpp_protocol.md) - Network disconnect correlation
