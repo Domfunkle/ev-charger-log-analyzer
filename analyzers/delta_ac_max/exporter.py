@@ -87,6 +87,12 @@ class CsvExporter:
                 'Lost_TransactionID_NoResponse': result.get('lost_transaction_id', {}).get('lost_transaction_count', 0),
                 'Lost_TransactionID_Invalid': result.get('lost_transaction_id', {}).get('invalid_transaction_ids', 0),
                 
+                # Pre-charging aborts (Authorize without StartTransaction)
+                'PreCharging_Abort_Count': result.get('precharging_aborts', {}).get('abort_count', 0),
+                'PreCharging_Quick_Aborts': result.get('precharging_aborts', {}).get('quick_aborts', 0),
+                'PreCharging_Slow_Aborts': result.get('precharging_aborts', {}).get('slow_aborts', 0),
+                'PreCharging_Severity': result.get('precharging_aborts', {}).get('severity', ''),
+                
                 'Hard_Reset_Count': result.get('hard_reset_data_loss', {}).get('hard_reset_count', 0),
                 'Soft_Reset_Count': result.get('hard_reset_data_loss', {}).get('soft_reset_count', 0),
                 'Hard_Reset_Incomplete_Transactions': result.get('hard_reset_data_loss', {}).get('incomplete_transactions', 0),

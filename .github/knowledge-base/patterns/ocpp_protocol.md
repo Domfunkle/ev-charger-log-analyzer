@@ -49,6 +49,145 @@ Charging → Faulted → Available (after recovery)
 
 ---
 
+## Authorize Without StartTransaction (Pre-Charging Abort)
+
+### Pattern Description
+
+**Symptom:** Charger sequence goes `Preparing → Authorize (Accepted) → Finishing` with **NO StartTransaction**
+
+**OCPP Log Pattern:**
+```
+XX:XX:XX StatusNotification: Preparing
+XX:XX:XX Authorize: {"idTag": "..."} → status=Accepted
+XX:XX:XX StatusNotification: Finishing (skipped Charging & StartTransaction!)
+```
+
+**Timeline Characteristic:** Very short duration (typically 5-15 seconds from Authorize to Finishing)
+
+### Root Causes
+
+**NOT Always a Fault** - Can be legitimate safety abort or user error:
+
+**1. Connector Not Properly Seated (Most Common - User Error)**
+- User didn't push connector until it clicked/locked
+- Charger detected connection (Preparing) but lock sensor didn't engage
+- Authorization succeeded, but pre-energization safety check failed
+- **Abort reason:** No confirmed mechanical lock → unsafe to energize
+- **Timing:** 5-10 seconds typical (immediate safety check failure)
+
+**2. Vehicle Not Ready to Charge**
+- Vehicle BMS (Battery Management System) not in ready state
+- Battery temperature out of range (too hot/cold)
+- Vehicle charge port fault or interlock issue
+- Vehicle requires user action (unlock port, select charge mode, etc.)
+- **Abort reason:** IEC 61851-1 pilot signal handshake failed
+- **Timing:** 5-15 seconds (vehicle failed to respond to pilot signal)
+
+**3. Intermittent Pilot Signal Circuit (Charger Fault)**
+- Worn connector pins, damaged cable, or pilot circuit fault
+- Pilot signal unstable or noisy during pre-charge validation
+- **Evidence:** History of EV0091 (PWMP Error - pilot signal abnormal)
+- **Timing:** Variable (depends on signal quality)
+- **Pattern:** Intermittent - works sometimes, fails others
+
+**4. Thermal Protection (Cable/Connector Overheating)**
+- Cable/connector too hot from previous session
+- Thermal cutout triggered during pre-energization check
+- **Evidence:** Failure after high-power charging session
+- **Timing:** 5-10 seconds (thermal sensor check during startup)
+- **Recovery:** Extended Finishing state while cooling (5-10 minutes)
+
+**5. Pre-Charging Safety Check Failure**
+- Ground fault detected during pre-energization
+- Contactor test failed
+- RCD (Residual Current Device) pre-trip
+- **Timing:** 5-10 seconds (internal safety check sequence)
+- **No error logged:** Fault too brief or within acceptable tolerance
+
+### Detection Logic
+
+**Key Indicators:**
+
+**Definite Pre-Charging Abort:**
+- ✅ StatusNotification: Preparing
+- ✅ Authorize request sent
+- ✅ Authorize response: Accepted
+- ❌ NO StartTransaction.req logged
+- ✅ StatusNotification: Finishing (within 30 seconds of Authorize)
+
+**Severity Assessment:**
+
+**Low Severity (Likely User Error):**
+- Single occurrence
+- Charger has successful sessions before/after
+- Same user successfully charges at different charger
+- No EV0091 or hardware errors in history
+
+**Medium Severity (Investigate):**
+- Multiple occurrences (>3 in a week)
+- Pattern: Same vehicle repeatedly fails
+- Timing: Always ~5-6 seconds (suggests timeout)
+
+**High Severity (Likely Charger Fault):**
+- Frequent pattern (>10% of charging attempts)
+- Charger has history of EV0091 (PWMP Error)
+- Multiple different vehicles affected
+- Long Finishing state (>5 min) suggests thermal issue
+
+### Diagnostic Approach
+
+**Step 1: Check Vehicle & User Pattern**
+- Does same vehicle charge successfully at other chargers?
+- Has user successfully charged before?
+- Was this user's first time using EV charger?
+
+**Step 2: Check Charger History**
+- Is this an isolated incident or pattern?
+- Any EV0091, EV0085, or EV0082 errors in recent history?
+- Has charger been commissioned recently?
+
+**Step 3: Field Inspection (If Pattern Persists)**
+- Test connector locking mechanism
+- Inspect pilot signal with oscilloscope
+- Check for connector/cable damage or overheating signs
+- Verify ground continuity and resistance
+- Test with known-good vehicle
+
+### Example Case Study
+
+**Incident:** Feb 17, 2026 23:41-23:50 UTC  
+**Charger:** KKB251700127WE (Brand new, commissioned Jan 2026)  
+**Timeline:**
+```
+23:41:46 - Preparing
+23:41:55 - Authorize (EB0A782D) → Accepted (9s delay - user fumbling?)
+23:42:01 - Finishing (only 6s after authorization!)
+23:50:54 - Available (9 min cleanup)
+```
+
+**Initial Investigation:**
+- Suspected pilot signal fault (charger has EV0091 history)
+- Suspected intermittent hardware issue
+
+**Resolution:**
+- User successfully charged at identical charger (different bay)
+- User had charged at this charger before successfully
+- Charger operating normally for 1+ month with no pattern
+- **Conclusion:** Most likely connector not properly seated (user error)
+
+**Lesson:** Don't assume charger fault on single incident. Check:
+1. Can same vehicle charge elsewhere? (Yes → likely not vehicle)
+2. Has charger worked with other vehicles? (Yes → likely not charger)
+3. Is there a pattern? (No → likely one-time user error)
+
+### Related Patterns
+
+- **[Hardware Faults](hardware_faults.md)** - EV0091 (PWMP Error), connector issues
+- **[State Transitions](state_transitions.md)** - OCPP state machine validation
+- **[Current Limiting](current_limiting.md)** - IEC 61851-1 pilot signal behavior
+
+---
+
 ## RemoteStartTransaction Protocol
 
 ### Purpose

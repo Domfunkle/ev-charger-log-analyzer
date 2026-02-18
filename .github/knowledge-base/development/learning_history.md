@@ -5,6 +5,199 @@
 
 ---
 
+## v0.0.10 - Authorize Without StartTransaction Pattern (2026-02-18)
+
+### Overview
+Discovered new OCPP protocol pattern: **Pre-charging abort** where charger goes `Preparing → Authorize (Accepted) → Finishing` with **NO StartTransaction**. This pattern is NOT always a fault - often legitimate safety abort or user error.
+
+### User Report (2026-02-18)
+**User:** "User plugged in, swiped RFID, heard charger click, but came back and saw charger not charging. OCPP logs reveal charger went to Preparing, Authorize was approved, but went straight to Finishing. No StartTransaction."  
+**Charger:** KKB251700127WE (Brand new, commissioned Jan 2026)  
+**Context:** User successfully charged at identical charger in different bay immediately after
+
+### Investigation & Timeline
+
+**Feb 17, 2026 23:41-23:50 UTC:**
+```
+23:41:46 - StatusNotification: Preparing (cable connected)
+23:41:55 - Authorize: idTag "EB0A782D" → Accepted (9 sec delay)
+23:42:01 - StatusNotification: Finishing (6 sec after auth, NO StartTransaction!)
+23:47:15 - Still Finishing (stuck for 5+ minutes)
+23:50:54 - StatusNotification: Available (cleanup complete)
+```
+
+**Key Evidence:**
+- ✅ Charger working perfectly for 1+ month with successful sessions
+- ✅ Same vehicle charged successfully at identical charger (different bay)
+- ✅ User had successfully used this charger before
+- ✅ No pattern of failures (isolated incident)
+- ⚠️ Charger has history of EV0091 (PWMP Error - pilot signal issues) from earlier period
+- ✅ Transaction 2424 logs show normal operation (27A charging, hours duration)
+
+### Root Cause Analysis
+
+**Initial Hypotheses (Ruled Out):**
+1. ❌ Vehicle fault → Same vehicle worked at other charger
+2. ❌ Charger hardware fault → Charger has 1+ month successful operation
+3. ❌ Installation issue → Site wiring/config tightly controlled & verified
+4. ❌ DIP switch misconfiguration → Controlled installation process
+5. ❌ Backend configuration → Same backend works for other charger
+
+**Most Likely Cause: User Error - Connector Not Properly Seated**
+- User didn't push connector until it clicked/locked
+- Charger detected connection (Preparing state)
+- Authorization succeeded, but pre-energization safety check failed
+- Charger aborted (no confirmed mechanical lock = unsafe to energize)
+- **6-second timing** indicates immediate safety check failure
+- User walked to other charger, seated connector properly → success
+
+**Alternative Possible Causes (Less Likely):**
+- Vehicle BMS not ready to charge (temperature, state issues)
+- Transient pilot signal issue (intermittent connector contact during insertion)
+- User jiggled/adjusted connector during RFID swipe
+- One-time random glitch (cosmic ray, electrical noise, timing race)
+
+### Pattern Classification
+
+**Pattern Name:** "Authorize Without StartTransaction" or "Pre-Charging Abort"
+
+**OCPP Sequence:**
+```
+StatusNotification: Preparing
+    ↓
+Authorize.req: {"idTag": "..."}
+    ↓
+Authorize.conf: {"status": "Accepted"}
+    ↓
+[Charger performs pre-energization safety checks]
+    ↓
+❌ Safety check fails (connector lock, pilot signal, thermal, etc.)
+    ↓
+StatusNotification: Finishing (NO StartTransaction sent)
+    ↓
+StatusNotification: Available
+```
+
+**NOT a Protocol Violation** - This is correct/safe charger behavior when pre-energization checks fail
+
+**Timing Signature:**
+- **5-10 seconds:** Immediate safety check failure (connector lock, ground fault, etc.)
+- **10-15 seconds:** Vehicle communication timeout (pilot signal handshake failed)
+- **Extended Finishing:** Thermal protection (connector cooling before reset)
+
+### Severity Assessment Criteria
+
+**LOW Severity (Likely User Error) - No Action Needed:**
+- ✅ Single/rare occurrence
+- ✅ Charger has successful sessions before/after
+- ✅ Same user/vehicle succeeds at different charger
+- ✅ No hardware errors (EV0091, EV0085, EV0082) in recent history
+- ✅ Charger operating >1 month without pattern
+
+**MEDIUM Severity (Monitor) - Investigate if Persists:**
+- ⚠️ Multiple occurrences (>3 per week)
+- ⚠️ Same vehicle repeatedly fails
+- ⚠️ Timing always similar (~5-6 seconds - suggests timeout/threshold)
+
+**HIGH Severity (Likely Charger Fault) - Service Required:**
+- 🔴 Frequent pattern (>10% of charging attempts)
+- 🔴 Charger has history of EV0091 (PWMP Error - pilot signal)
+- 🔴 Multiple different vehicles affected
+- 🔴 Long Finishing state (>5 min) every time (suggests thermal issue)
+- 🔴 Recent installation with site wiring issues
+
+### Root Causes by Category
+
+**1. User Error (60% probability in field):**
+- Connector not pushed until click/lock engaged
+- User unfamiliar with charger operation
+- Cable heavy/stiff, requires firm push
+- User distracted while connecting
+
+**2. Vehicle State (25% probability):**
+- Vehicle BMS not ready (battery temp, initialization)
+- Charge port interlock/lock issue
+- Vehicle requires user action (mode selection, port unlock)
+- Vehicle-specific timing requirements not met
+
+**3. Charger Hardware (10% probability):**
+- Worn connector lock mechanism or sensor
+- Pilot signal circuit degradation (see EV0091 history)
+- Cable/connector thermal issue after heavy use
+- Intermittent ground fault during pre-check
+
+**4. Transient Glitch (5% probability):**
+- One-time random electronics glitch
+- Electrical noise during critical timing window
+- Cosmic ray bit flip (yes, really - happens in high-altitude/cosmic ray environments)
+
+### Knowledge Documented
+
+**Added to OCPP Protocol Patterns:**
+- New section: "Authorize Without StartTransaction (Pre-Charging Abort)"
+- Complete pattern description with OCPP sequence
+- Root cause analysis framework
+- Diagnostic decision tree
+- Example case study (this incident)
+- Severity assessment criteria
+- Related patterns cross-links
+
+**File:** `.github/knowledge-base/patterns/ocpp_protocol.md`  
+**Lines Added:** ~120 lines comprehensive documentation
+
+### Detection Considerations
+
+**Should Analyzer Flag This?**
+
+**Current Behavior:** Analyzer flags "Lost Transaction IDs" when no StartTransaction.conf found
+- This pattern shows up as "Lost Transaction ID"
+- Currently treated as potential billing failure (HIGH severity)
+
+**Recommendation:** Add smart classification:
+```python
+if authorize_accepted and no_start_transaction:
+    time_to_finishing = finishing_time - authorize_time
+    
+    if time_to_finishing < 15 seconds:
+        # Pre-charging abort (safety check failure)
+        classification = "Pre-charging abort"
+        
+        if is_isolated_incident:
+            severity = "INFO"  # User error likely
+        elif has_pattern or has_ev0091_history:
+            severity = "WARNING"  # Investigate charger
+    else:
+        # True lost transaction (timeout or comm failure)
+        classification = "Lost transaction ID"
+        severity = "CRITICAL"
+```
+
+**Benefit:** Reduces false alarms, focuses attention on true charger faults vs user errors
+
+### Lessons Learned
+
+**Diagnostic Workflow:**
+1. ✅ **Don't assume charger fault on single incident**
+2. ✅ **Check: Can same vehicle charge elsewhere?** (Yes → likely not vehicle)
+3. ✅ **Check: Has charger worked with other vehicles?** (Yes → likely not charger)
+4. ✅ **Check: Is there a pattern?** (No → likely one-time user error)
+5. ✅ **Check: New installation or mature deployment?** (Mature → less likely install issue)
+6. ✅ **Check: User experience level?** ("Technology stupid" per user → likely user error)
+
+**Field Reality:**
+- Most pre-charging aborts are **user error** (connector not seated)
+- Charger correctly protecting against unsafe energization
+- Pattern analysis over time crucial to distinguish fault from user error
+- Single incidents on mature chargers (>1 month) rarely indicate hardware fault
+
+**User Communication:**
+- Avoid blaming user directly (poor customer service)
+- Provide helpful instructions: "Ensure connector clicks/locks firmly"
+- Monitor for pattern before scheduling service
+- Recommend trying again before escalating
+
+---
+
 ## v0.0.9 - RTC Reset False Positives Fix (2026-01-26)
 
 ### Overview

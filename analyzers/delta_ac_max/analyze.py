@@ -328,6 +328,7 @@ class ChargerAnalyzer:
         
         # Phase 1: Critical OCPP detectors (data loss prevention)
         analysis['lost_transaction_id'] = self.ocpp_transaction_detector.detect_lost_transaction_id(folder)
+        analysis['precharging_aborts'] = self.ocpp_transaction_detector.detect_precharging_aborts(folder)
         analysis['hard_reset_data_loss'] = self.ocpp_transaction_detector.detect_hard_reset_data_loss(folder)
         analysis['meter_register_tracking'] = self.ocpp_transaction_detector.detect_meter_register_tracking(folder)
         
@@ -491,6 +492,20 @@ class ChargerAnalyzer:
             if analysis['lost_transaction_id']['total_issues'] > 0:
                 analysis['issues'].append(f"🔴 CRITICAL: Lost TransactionID: {analysis['lost_transaction_id']['total_issues']} failures (BILLING LOST)")
                 analysis['status'] = 'Issue'
+            
+            # Pre-charging aborts (context-dependent severity)
+            if analysis['precharging_aborts']['abort_count'] > 0:
+                abort_data = analysis['precharging_aborts']
+                if abort_data['severity'] == 'CRITICAL':
+                    analysis['issues'].append(f"🔴 CRITICAL: Pre-charging aborts: {abort_data['abort_count']} (charger fault likely)")
+                    analysis['status'] = 'Issue'
+                elif abort_data['severity'] == 'WARNING':
+                    analysis['issues'].append(f"⚠️ WARNING: Pre-charging aborts: {abort_data['abort_count']} (pattern emerging - monitor)")
+                    if analysis['status'] == 'Clean':
+                        analysis['status'] = 'Warning'
+                else:  # INFO
+                    analysis['issues'].append(f"ℹ️ INFO: Pre-charging aborts: {abort_data['abort_count']} (likely user error - connector not seated)")
+                    # Don't change status for INFO level
             
             if analysis['hard_reset_data_loss']['incomplete_transactions'] > 0:
                 analysis['issues'].append(f"🔴 CRITICAL: Hard reset data loss: {analysis['hard_reset_data_loss']['incomplete_transactions']} incomplete transactions")

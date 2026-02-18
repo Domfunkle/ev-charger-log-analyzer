@@ -116,6 +116,187 @@ class OcppTransactionDetector:
         }
     
     @staticmethod
+    def detect_precharging_aborts(folder: Path) -> Dict[str, Any]:
+        """Detect pre-charging aborts (Authorize → Finishing without StartTransaction)
+        
+        PATTERN: Charger goes Preparing → Authorize (Accepted) → Finishing with NO StartTransaction.
+        This is NOT always a fault - often indicates legitimate safety abort or user error.
+        
+        Common causes:
+        - User error: Connector not fully seated/locked (most common)
+        - Vehicle BMS not ready (temperature, initialization)
+        - Pilot signal handshake failure
+        - Thermal protection triggered
+        - Pre-energization safety check failure
+        
+        Severity classification:
+        - INFO: Isolated incidents (<15 sec abort) - likely user error
+        - WARNING: Pattern emerging (>3/week) - investigate charger
+        - CRITICAL: Frequent (>10% of attempts) - charger fault likely
+        
+        Args:
+            folder: Path to charger log folder
+            
+        Returns:
+            Dict with 'abort_count', 'quick_aborts', 'severity', 'examples'
+        """
+        from datetime import datetime, timedelta
+        
+        ocpp_log_dir = folder / "Storage" / "SystemLog"
+        if not ocpp_log_dir.exists():
+            return {
+                'abort_count': 0,
+                'quick_aborts': 0,
+                'severity': 'INFO',
+                'examples': []
+            }
+        
+        # Track state transitions
+        preparing_events = []  # List of (timestamp_str, timestamp_dt)
+        authorize_events = []  # List of (timestamp_str, timestamp_dt, idTag, status)
+        finishing_events = []  # List of (timestamp_str, timestamp_dt)
+        start_transaction_events = []  # List of timestamp_str
+        
+        # Get all OCPP log files
+        ocpp_files = []
+        ocpp_base = ocpp_log_dir / "OCPP16J_Log.csv"
+        if ocpp_base.exists():
+            ocpp_files.append(ocpp_base)
+        
+        for i in range(10):
+            rotated = ocpp_log_dir / f"OCPP16J_Log.csv.{i}"
+            if rotated.exists():
+                ocpp_files.append(rotated)
+        
+        # Parse OCPP16J messages
+        for ocpp_file in ocpp_files:
+            try:
+                with open(ocpp_file, 'r', encoding='utf-8', errors='ignore') as f:
+                    for line in f:
+                        # Extract timestamp (format: "Feb 17 23:41:46.159")
+                        timestamp_match = re.match(r'(\w+ +\d+ \d+:\d+:\d+\.\d+)', line)
+                        if not timestamp_match:
+                            continue
+                        timestamp_str = timestamp_match.group(1)
+                        
+                        # Parse timestamp to datetime for duration calc
+                        # Note: Year inference may be needed, using current year for now
+                        try:
+                            timestamp_dt = datetime.strptime(timestamp_str, '%b %d %H:%M:%S.%f')
+                            # Add current year (approximation - good enough for duration calc)
+                            timestamp_dt = timestamp_dt.replace(year=datetime.now().year)
+                        except:
+                            timestamp_dt = None
+                        
+                        # Detect StatusNotification: Preparing
+                        # Format: [Info][OCPP16J]StatusNotificationReq:pu8SendBuf=[2,"...","StatusNotification",{..."status":"Preparing"...}]
+                        if 'StatusNotification' in line and ('"status":"Preparing"' in line or '"status": "Preparing"' in line):
+                            preparing_events.append((timestamp_str, timestamp_dt))
+                        
+                        # Detect Authorize.req
+                        # Format: [Info][OCPP16J]AuthorizeReq:pu8SendBuf=[2,"...","Authorize",{"idTag":"..."}]
+                        if 'AuthorizeReq' in line or ('"Authorize"' in line and '[2,' in line):
+                            # Extract idTag
+                            id_match = re.search(r'"idTag"\s*:\s*"([^"]+)"', line)
+                            idTag = id_match.group(1) if id_match else "Unknown"
+                            # Store as pending authorize (will match with result on next line)
+                            authorize_events.append((timestamp_str, timestamp_dt, idTag, None))
+                        
+                        # Detect Authorize result (conf)
+                        # Format: [Info][OCPP16J]ResultParsing:Authorize:status=Accepted,expiryDate=,parentIdTag=...
+                        if 'ResultParsing:Authorize' in line:
+                            # Extract status
+                            status_match = re.search(r'status\s*=\s*([^,\s]+)', line)
+                            status = status_match.group(1) if status_match else "Unknown"
+                            # Update last authorize event with status
+                            if authorize_events and authorize_events[-1][3] is None:
+                                last_auth = authorize_events[-1]
+                                authorize_events[-1] = (last_auth[0], last_auth[1], last_auth[2], status)
+                        
+                        # Detect StatusNotification: Finishing
+                        # Format: [Info][OCPP16J]StatusNotificationReq:pu8SendBuf=[2,"...","StatusNotification",{..."status":"Finishing"...}]
+                        if 'StatusNotification' in line and ('"status":"Finishing"' in line or '"status": "Finishing"' in line):
+                            finishing_events.append((timestamp_str, timestamp_dt))
+                        
+                        # Detect StartTransaction CALL
+                        # Format: [Info][OCPP16J]StartTransactionReq:pu8SendBuf=[2,"...","StartTransaction",{...}]
+                        if 'StartTransactionReq' in line or ('StartTransaction' in line and '[2,' in line):
+                            start_transaction_events.append(timestamp_str)
+            
+            except Exception as e:
+                print(f"  ⚠ Could not parse pre-charging aborts from {ocpp_file.name}: {e}")
+        
+        # Analyze patterns: Find Authorize (Accepted) followed by Finishing WITHOUT StartTransaction
+        aborts = []
+        quick_abort_count = 0  # Aborts <15 seconds (likely safety check)
+        
+        for auth_idx, (auth_ts, auth_dt, idTag, auth_status) in enumerate(authorize_events):
+            # Only process Accepted authorizations
+            if auth_status != 'Accepted':
+                continue
+            
+            # Look for Finishing event after this Authorize
+            finishing_after = [f for f in finishing_events if f[0] > auth_ts]
+            if not finishing_after:
+                continue  # No Finishing found
+            
+            next_finishing = finishing_after[0]
+            finish_ts, finish_dt = next_finishing
+            
+            # Check if StartTransaction occurred between Authorize and Finishing
+            start_between = any(
+                auth_ts < start_ts < finish_ts
+                for start_ts in start_transaction_events
+            )
+            
+            if not start_between:
+                # This is a pre-charging abort!
+                # Calculate duration from Authorize to Finishing
+                duration_sec = None
+                if auth_dt and finish_dt:
+                    try:
+                        duration = finish_dt - auth_dt
+                        duration_sec = duration.total_seconds()
+                        # Handle day wrap-around (negative duration)
+                        if duration_sec < 0:
+                            duration_sec += 86400  # Add 24 hours
+                    except:
+                        pass
+                
+                # Classify as quick abort if <15 seconds
+                is_quick = duration_sec is not None and duration_sec < 15
+                if is_quick:
+                    quick_abort_count += 1
+                
+                aborts.append({
+                    'timestamp': auth_ts,
+                    'idTag': idTag,
+                    'duration_sec': round(duration_sec, 1) if duration_sec else 'Unknown',
+                    'finishing_timestamp': finish_ts,
+                    'is_quick_abort': is_quick,
+                    'issue': f'Authorize (Accepted) → Finishing in {duration_sec:.1f}s without StartTransaction' if duration_sec else 'Authorize → Finishing without StartTransaction'
+                })
+        
+        # Severity assessment
+        abort_count = len(aborts)
+        severity = 'INFO'  # Default
+        
+        if abort_count >= 10:
+            severity = 'CRITICAL'  # Frequent pattern
+        elif abort_count >= 3:
+            severity = 'WARNING'  # Pattern emerging
+        else:
+            severity = 'INFO'  # Isolated incidents
+        
+        return {
+            'abort_count': abort_count,
+            'quick_aborts': quick_abort_count,
+            'slow_aborts': abort_count - quick_abort_count,
+            'severity': severity,
+            'examples': aborts[:10]  # First 10 for display
+        }
+    
+    @staticmethod
     def detect_hard_reset_data_loss(folder: Path) -> Dict[str, Any]:
         """Detect hard reset events that cause transaction data loss
         

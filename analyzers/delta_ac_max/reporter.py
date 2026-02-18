@@ -206,6 +206,43 @@ class Reporter:
                         console.print(f"[dim]  ... and {lost_txid['total_issues'] - len(examples)} more occurrences[/dim]")
                 console.print()
             
+            # Pre-Charging Aborts
+            precharge = result.get('precharging_aborts', {})
+            if precharge.get('abort_count', 0) > 0:
+                severity = precharge.get('severity', 'INFO')
+                abort_count = precharge['abort_count']
+                quick_aborts = precharge.get('quick_aborts', 0)
+                
+                # Color-code based on severity
+                if severity == 'CRITICAL':
+                    console.print(f"[bold red]⚠ CRITICAL: Pre-Charging Aborts - {abort_count} occurrences[/bold red]")
+                    console.print(f"[dim]  Pattern:[/dim] Authorize (Accepted) → Finishing [red]without StartTransaction[/red]")
+                    console.print(f"   • Quick aborts (<15 sec): {quick_aborts}")
+                    console.print(f"   • Likely cause: [red]Charger hardware fault[/red] (pilot signal, connector lock)")
+                    console.print(f"   • Recommendation: [red]Service required - investigate charger[/red]")
+                elif severity == 'WARNING':
+                    console.print(f"[bold yellow]⚠ WARNING: Pre-Charging Aborts - {abort_count} occurrences[/bold yellow]")
+                    console.print(f"[dim]  Pattern:[/dim] Authorize (Accepted) → Finishing [yellow]without StartTransaction[/yellow]")
+                    console.print(f"   • Quick aborts (<15 sec): {quick_aborts}")
+                    console.print(f"   • Likely cause: [yellow]Pattern emerging[/yellow] - needs investigation")
+                    console.print(f"   • Recommendation: [yellow]Monitor for increasing frequency[/yellow]")
+                else:  # INFO
+                    console.print(f"[bold cyan]ℹ INFO: Pre-Charging Aborts - {abort_count} occurrences[/bold cyan]")
+                    console.print(f"[dim]  Pattern:[/dim] Authorize (Accepted) → Finishing [cyan]without StartTransaction[/cyan]")
+                    console.print(f"   • Quick aborts (<15 sec): {quick_aborts}")
+                    console.print(f"   • Likely cause: [cyan]User error[/cyan] (connector not fully seated/locked)")
+                    console.print(f"   • Recommendation: [cyan]No action needed[/cyan] - isolated incidents normal")
+                
+                # Show examples
+                if precharge.get('examples'):
+                    examples = precharge['examples']
+                    console.print(f"[dim]  First occurrence:[/dim] {examples[0].get('timestamp', '')} - {examples[0].get('issue', '')}")
+                    if len(examples) > 1:
+                        console.print(f"[dim]  Last occurrence:[/dim] {examples[-1].get('timestamp', '')} - {examples[-1].get('issue', '')}")
+                    if abort_count > len(examples):
+                        console.print(f"[dim]  ... and {abort_count - len(examples)} more occurrences[/dim]")
+                console.print()
+            
             # Hard Reset Data Loss
             hard_reset = result.get('hard_reset_data_loss', {})
             if hard_reset.get('incomplete_transactions', 0) > 0:
