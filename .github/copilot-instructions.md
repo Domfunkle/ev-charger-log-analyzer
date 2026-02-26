@@ -132,6 +132,7 @@ Always ensure:
 ### 📖 Case Studies (Real-World Scenarios)
 - **[Federation University](knowledge-base/case-studies/federation_university.md)** - Dual-source limiting + RFID failure (July-Dec 2024)
 - **[EVS09 SystemLog Failure](knowledge-base/case-studies/evs09_systemlog_failure.md)** - 17-day logging gap analysis (Jan-Feb 2026)
+- **[KKB241600082WE ChangeConfig Bursts](knowledge-base/case-studies/kkb241600082we_changeconfig_bursts.md)** - OCP correlation with reconnect/config replay storms
 
 ### 🛠️ Development Guides (How-To)
 - **[Pattern Detection](knowledge-base/development/pattern_detection.md)** - How to add new patterns (step-by-step)
@@ -285,7 +286,8 @@ knowledge-base/
 │   └── state_transitions.md        (state machine)
 ├── case-studies/                   (real-world scenarios)
 │   ├── federation_university.md    (dual-source + RFID fault)
-│   └── evs09_systemlog_failure.md  (SystemLog gap w/ OCPP active)
+│   ├── evs09_systemlog_failure.md  (SystemLog gap w/ OCPP active)
+│   └── kkb241600082we_changeconfig_bursts.md (ChangeConfiguration burst correlation)
 └── development/                    (how-to guides)
     ├── pattern_detection.md        (add new patterns)
     ├── modularity_guidelines.md    (organization)

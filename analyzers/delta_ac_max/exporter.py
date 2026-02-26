@@ -55,6 +55,12 @@ class CsvExporter:
                 'OCPP_Timeouts': result.get('ocpp_timeouts', {}).get('count', 0),
                 'Low_Current_Profiles': result.get('low_current_profiles', {}).get('count', 0),
                 'Zero_Current_Profiles': result.get('low_current_profiles', {}).get('zero_current', 0),
+                'ChangeConfig_Total': result.get('change_config_bursts', {}).get('total_changes', 0),
+                'ChangeConfig_Unique_Keys': result.get('change_config_bursts', {}).get('unique_keys', 0),
+                'ChangeConfig_Burst_Count': result.get('change_config_bursts', {}).get('burst_count', 0),
+                'ChangeConfig_Largest_Burst': result.get('change_config_bursts', {}).get('largest_burst_size', 0),
+                'ChangeConfig_Bursts_With_OCP': result.get('change_config_bursts', {}).get('bursts_with_ocp', 0),
+                'ChangeConfig_Bursts_With_Reconnect': result.get('change_config_bursts', {}).get('bursts_with_backend_reconnect', 0),
                 
                 # Hardware issues
                 'RFID_Faults': result.get('rfid_faults', {}).get('count', 0),

@@ -5,6 +5,51 @@
 
 ---
 
+## v0.0.11 - ChangeConfiguration Burst Correlation (2026-02-26)
+
+### Overview
+Added detection/reporting for **ChangeConfiguration bursts** and their correlation with:
+- backend reconnect windows,
+- ConfigTable write storms,
+- nearby `AC output OCP` events.
+
+This addresses field analysis where OCPP config replay traffic obscures root-cause timelines.
+
+### What Was Learned
+
+In KKB241600082WE logs:
+- reconnects often trigger rapid key replay,
+- many bursts are benign replay behavior,
+- high-value incidents are bursts that overlap OCP/EV0082 windows.
+
+### Analyzer Enhancements
+
+- New detector: `OcppDetector.detect_change_configuration_bursts()`
+- Integrated into analysis result model and issue classification
+- Added detailed TUI reporting:
+  - total changes, unique keys, burst count, max burst size,
+  - bursts near reconnects,
+  - bursts near OCP,
+  - first-burst key/correlation example
+- Added CSV export columns for burst metrics
+- Added unit test coverage for burst + OCP correlation
+
+### Case Documentation
+
+- Added case study: `case-studies/kkb241600082we_changeconfig_bursts.md`
+- Updated `knowledge-base/README.md` navigation
+- Updated `development/pattern_detection.md` with burst detection recipe
+
+### Practical Guidance
+
+Treat ChangeConfiguration bursts as **context signal**, not standalone fault proof.
+Prioritize incidents where all are present:
+1. reconnect window,
+2. config burst,
+3. OCP/EV0082 overlap.
+
+---
+
 ## v0.0.10 - Authorize Without StartTransaction Pattern (2026-02-18)
 
 ### Overview

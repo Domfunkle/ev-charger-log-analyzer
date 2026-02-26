@@ -27,6 +27,7 @@ Understanding log patterns, detection logic, root cause analysis - the "what doe
 Real-world scenarios, diagnosis walkthroughs, lessons learned - the "what happened?" knowledge
 
 - **[Federation University](case-studies/federation_university.md)** - Dual-source current limiting + RFID hardware failure
+- **[KKB241600082WE ChangeConfig Bursts](case-studies/kkb241600082we_changeconfig_bursts.md)** - OCP correlation with reconnect/config replay storms
 
 ### 🛠️ Development Guides
 How to extend the analyzer, maintain modularity - the "how do I?" knowledge

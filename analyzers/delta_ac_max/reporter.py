@@ -48,6 +48,9 @@ class Reporter:
         if not results:
             console.print("\n[yellow]No results to display.[/yellow]")
             return
+
+        # Show detailed findings first so final viewport ends on summary
+        Reporter._show_detailed_findings(results)
         
         console.print()
         console.rule("[bold cyan]SUMMARY REPORT[/bold cyan]", style="cyan")
@@ -93,7 +96,8 @@ class Reporter:
                 ocpp_issues = (
                     charger.get('charging_profile_timeouts', {}).get('count', 0) +
                     charger.get('ocpp_rejections', {}).get('total', 0) +
-                    charger.get('ocpp_timeouts', {}).get('count', 0)
+                    charger.get('ocpp_timeouts', {}).get('count', 0) +
+                    charger.get('change_config_bursts', {}).get('bursts_with_ocp', 0)
                 )
                 
                 # Get critical detector results
@@ -137,9 +141,6 @@ class Reporter:
         console.print(f"[bold]Total Chargers:[/bold] {total}")
         console.print(f"[green]Clean:[/green] {clean_count}  [yellow]Issues/Warnings:[/yellow] {issue_count}")
         console.print()
-        
-        # Show detailed findings for chargers with issues
-        Reporter._show_detailed_findings(results)
     
     @staticmethod
     def _show_detailed_findings(results):
@@ -295,6 +296,41 @@ class Reporter:
                         console.print(f"[dim]  Last occurrence:[/dim] {examples[-1].strip()}")
                     if rejections['total'] > len(examples):
                         console.print(f"[dim]  ... and {rejections['total'] - len(examples)} more occurrences[/dim]")
+                console.print()
+
+            # ChangeConfiguration bursts
+            change_bursts = result.get('change_config_bursts', {})
+            if change_bursts.get('burst_count', 0) > 0:
+                console.print(
+                    f"[yellow]⚠ ChangeConfiguration Bursts: {change_bursts.get('burst_count', 0)}[/yellow]"
+                )
+                console.print(
+                    f"[dim]  Search term:[/dim] [cyan]" 
+                    f"CommandParsing:tReg.tMsgCS.pu8Action=ChangeConfiguration" 
+                    f"[/cyan] [dim]in OCPP16J_Log.csv[/dim]"
+                )
+                console.print(f"   • Total ChangeConfiguration commands: {change_bursts.get('total_changes', 0)}")
+                console.print(f"   • Unique keys changed: {change_bursts.get('unique_keys', 0)}")
+                console.print(f"   • Largest burst: {change_bursts.get('largest_burst_size', 0)} commands")
+                console.print(f"   • Bursts near OCP events: {change_bursts.get('bursts_with_ocp', 0)}")
+                console.print(f"   • Bursts near backend reconnects: {change_bursts.get('bursts_with_backend_reconnect', 0)}")
+
+                examples = change_bursts.get('examples', [])
+                if examples:
+                    first = examples[0]
+                    keys_preview = ', '.join(first.get('keys', [])[:6])
+                    if len(first.get('keys', [])) > 6:
+                        keys_preview += ', ...'
+                    console.print(
+                        f"[dim]  First burst:[/dim] {first.get('start', 'Unknown')} → {first.get('end', 'Unknown')} "
+                        f"({first.get('change_count', 0)} changes, {first.get('duration_seconds', 0)}s)"
+                    )
+                    console.print(f"[dim]  Keys sample:[/dim] {keys_preview if keys_preview else 'None'}")
+                    console.print(
+                        f"[dim]  Correlation:[/dim] ConfigTable writes={first.get('configtable_writes', 0)}, "
+                        f"backend reconnect events={first.get('backend_reconnect_events', 0)}, "
+                        f"nearby OCP={first.get('ocp_events_nearby', 0)}"
+                    )
                 console.print()
             
             # RFID Faults

@@ -201,6 +201,53 @@ Include:
 
 ---
 
+## Pattern Recipe: ChangeConfiguration Burst Detection
+
+Use this when diagnosing backend reconnect storms and OCP-adjacent control traffic.
+
+### Detection Inputs
+
+- `OCPP16J_Log.csv*`:
+    - `CommandParsing:tReg.tMsgCS.pu8Action=ChangeConfiguration`
+    - extract `key=...`
+- `SystemLog*`:
+    - `[OCPP16J][ConfigTable] Write Success`
+    - `Backend connection fail/success`
+    - `[IntComm] AC output OCP` (exclude recover)
+
+### Burst Heuristic (Current Implementation)
+
+- Sort `ChangeConfiguration` events by timestamp
+- Cluster consecutive events if gap <= 3 seconds
+- Keep clusters with at least 8 changes as bursts
+
+### Correlation Windows
+
+- ConfigTable writes: burst ±10 seconds
+- Backend reconnects: burst ±30 seconds
+- OCP events: burst ±45 seconds
+
+### Output Fields to Report
+
+- `total_changes`
+- `unique_keys`
+- `burst_count`
+- `largest_burst_size`
+- `bursts_with_ocp`
+- `bursts_with_backend_reconnect`
+- burst examples: start/end, duration, key list sample, correlation counters
+
+### Severity Guidance
+
+- **Warning:** bursts exist but no OCP overlap
+- **Issue:** any burst with OCP overlap, or very large burst size (20+)
+
+### Case Reference
+
+- [KKB241600082WE ChangeConfig Bursts](../case-studies/kkb241600082we_changeconfig_bursts.md)
+
+---
+
 ## Creating New Detector Module
 
 **When to create new module:**

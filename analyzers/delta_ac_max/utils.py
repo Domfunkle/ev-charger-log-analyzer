@@ -8,6 +8,11 @@ import re
 import zipfile
 from pathlib import Path
 
+from rich.console import Console
+
+
+console = Console()
+
 
 def extract_zips(log_directory, specific_files=None):
     """Extract password-protected ZIP files using SERIAL@delta pattern
@@ -23,10 +28,10 @@ def extract_zips(log_directory, specific_files=None):
     Returns:
         List of Path objects for successfully extracted folders
     """
-    print("=" * 80)
-    print("EXTRACTING PASSWORD-PROTECTED ZIP FILES")
-    print("=" * 80)
-    print()
+    console.print("=" * 80)
+    console.print("EXTRACTING PASSWORD-PROTECTED ZIP FILES")
+    console.print("=" * 80)
+    console.print()
     
     # Determine which zip files to process
     if specific_files:
@@ -46,10 +51,10 @@ def extract_zips(log_directory, specific_files=None):
         zip_files = list(log_directory.glob("*.zip"))
     
     if not zip_files:
-        print("No ZIP files found to extract.")
+        console.print("No ZIP files found to extract.")
         return []
     
-    print(f"Found {len(zip_files)} ZIP file(s) to extract\n")
+    console.print(f"Found {len(zip_files)} ZIP file(s) to extract\n")
     
     success_count = 0
     fail_count = 0
@@ -73,7 +78,7 @@ def extract_zips(log_directory, specific_files=None):
             match = re.search(r'^([A-Z0-9]{14})_', zip_file.name)
         
         if not match:
-            print(f"⚠ Could not extract serial from: {zip_file.name}")
+            console.print(f"⚠ Could not extract serial from: {zip_file.name}")
             fail_count += 1
             continue
         
@@ -93,10 +98,10 @@ def extract_zips(log_directory, specific_files=None):
             # Standard format: use zip stem
             dest_folder = extract_base_dir / zip_file.stem
         
-        print(f"Processing: {zip_file.name}")
-        print(f"  Serial: {serial}")
-        print(f"  Password: {password}")
-        print(f"  Destination: {dest_folder}")
+        console.print(f"Processing: {zip_file.name}")
+        console.print(f"  Serial: {serial}")
+        console.print(f"  Password: {password}")
+        console.print(f"  Destination: {dest_folder}")
         
         try:
             # Create destination folder
@@ -104,20 +109,21 @@ def extract_zips(log_directory, specific_files=None):
             
             # Extract ZIP with password
             with zipfile.ZipFile(zip_file, 'r') as zip_ref:
-                zip_ref.extractall(dest_folder, pwd=password.encode('utf-8'))
+                with console.status(f"[cyan]  Extracting {zip_file.name}...", spinner="dots"):
+                    zip_ref.extractall(dest_folder, pwd=password.encode('utf-8'))
             
-            print("  ✓ Extracted successfully\n")
+            console.print("  ✓ Extracted successfully\n")
             success_count += 1
             extracted_folders.append(dest_folder)
             
         except Exception as e:
-            print(f"  ✗ Extraction failed: {e}\n")
+            console.print(f"  ✗ Extraction failed: {e}\n")
             fail_count += 1
     
-    print()
-    print("Extraction Summary:")
-    print(f"  Successful: {success_count}")
-    print(f"  Failed: {fail_count}")
-    print()
+    console.print()
+    console.print("Extraction Summary:")
+    console.print(f"  Successful: {success_count}")
+    console.print(f"  Failed: {fail_count}")
+    console.print()
     
     return extracted_folders

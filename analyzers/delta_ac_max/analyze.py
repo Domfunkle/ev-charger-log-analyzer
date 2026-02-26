@@ -22,7 +22,7 @@ import os
 from pathlib import Path
 from multiprocessing import Pool, Manager, cpu_count
 from rich.console import Console
-from rich.progress import track
+from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn, TaskProgressColumn, TimeElapsedColumn
 from rich.live import Live
 from rich.table import Table
 from rich.panel import Panel
@@ -252,8 +252,17 @@ class ChargerAnalyzer:
         """
         return extract_zips(self.log_directory, specific_files)
     
-    def analyze_charger_log(self, folder):
+    def analyze_charger_log(self, folder, progress_callback=None):
         """Analyze a single charger log folder"""
+        def report_progress(percent, message=None):
+            if progress_callback:
+                try:
+                    progress_callback(percent, message)
+                except Exception:
+                    pass
+
+        report_progress(2, "Initializing")
+
         # Extract charger info from folder name
         match = re.search(r'\]([A-Z0-9]{14})(.*)$', folder.name)
         
@@ -300,6 +309,7 @@ class ChargerAnalyzer:
             'critical_events': [],
             'charging_profile_timeouts': {'count': 0, 'examples': []},
             'ocpp_rejections': {'total': 0, 'by_type': {}, 'examples': []},
+            'change_config_bursts': {'total_changes': 0, 'unique_keys': 0, 'burst_count': 0, 'largest_burst_size': 0, 'bursts_with_ocp': 0, 'bursts_with_backend_reconnect': 0, 'examples': []},
             'ng_flags': {'count': 0, 'examples': []},
             'ocpp_timeouts': {'count': 0, 'examples': []},
             'rfid_faults': {'count': 0, 'examples': []},
@@ -312,30 +322,43 @@ class ChargerAnalyzer:
         }
         
         # Run all detectors
+        report_progress(8, "Parsing event logs")
         events = self.event_detector.parse_events(folder)
         analysis['events'] = events
         
+        report_progress(16, "Analyzing OCPP profile timeouts")
         analysis['charging_profile_timeouts'] = self.ocpp_detector.detect_charging_profile_timeouts(folder)
+        report_progress(24, "Analyzing OCPP rejections")
         analysis['ocpp_rejections'] = self.ocpp_detector.detect_ocpp_rejections(folder)
+        report_progress(32, "Detecting config bursts")
+        analysis['change_config_bursts'] = self.ocpp_detector.detect_change_configuration_bursts(folder)
+        report_progress(38, "Scanning NG flags and timeouts")
         analysis['ng_flags'] = self.ocpp_detector.detect_ng_flags(folder)
         analysis['ocpp_timeouts'] = self.ocpp_detector.detect_ocpp_timeouts(folder)
+        report_progress(46, "Checking hardware faults and reboots")
         analysis['rfid_faults'] = self.hardware_detector.detect_rfid_faults(folder)
         analysis['system_reboots'] = self.hardware_detector.detect_system_reboots(folder)
+        report_progress(54, "Analyzing smart charging profiles")
         analysis['low_current_profiles'] = self.ocpp_detector.detect_low_current_profiles(folder)
+        report_progress(60, "Checking LMS and Modbus")
         analysis['lms_issues'] = self.lms_detector.detect_lms_issues(folder, self.event_detector.parse_events)
         analysis['modbus_config'] = self.lms_detector.detect_modbus_config_issues(folder)
+        report_progress(66, "Validating state transitions")
         analysis['state_transitions'] = self.state_detector.parse_ocpp_state_transitions(folder)
         
         # Phase 1: Critical OCPP detectors (data loss prevention)
+        report_progress(72, "Checking transaction integrity")
         analysis['lost_transaction_id'] = self.ocpp_transaction_detector.detect_lost_transaction_id(folder)
         analysis['precharging_aborts'] = self.ocpp_transaction_detector.detect_precharging_aborts(folder)
         analysis['hard_reset_data_loss'] = self.ocpp_transaction_detector.detect_hard_reset_data_loss(folder)
         analysis['meter_register_tracking'] = self.ocpp_transaction_detector.detect_meter_register_tracking(folder)
         
         # Informational: Firmware update tracking
+        report_progress(80, "Tracking firmware history")
         analysis['firmware_updates'] = self.firmware_detector.detect_firmware_updates(folder)
         
         # Parse RTC syncs for accurate year inference
+        report_progress(84, "Building RTC timeline")
         rtc_syncs = self._parse_rtc_syncs(folder)
         
         # Identify critical events
@@ -361,6 +384,7 @@ class ChargerAnalyzer:
         
         # Parse system log for baseline metrics
         try:
+            report_progress(88, "Computing baseline metrics")
             with open(system_log, 'r', encoding='utf-8', errors='ignore') as f:
                 content = f.read()
                 lines = content.splitlines()
@@ -430,6 +454,21 @@ class ChargerAnalyzer:
                 rejection_summary = ', '.join([f"{k}:{v}" for k, v in analysis['ocpp_rejections']['by_type'].items()])
                 analysis['issues'].append(f"OCPP rejections: {analysis['ocpp_rejections']['total']} ({rejection_summary})")
                 if analysis['ocpp_rejections']['total'] > 50:
+                    analysis['status'] = 'Issue'
+                elif analysis['status'] == 'Clean':
+                    analysis['status'] = 'Warning'
+
+            burst_data = analysis['change_config_bursts']
+            if burst_data['burst_count'] > 0:
+                issue_text = (
+                    f"ChangeConfiguration bursts: {burst_data['burst_count']} "
+                    f"(max {burst_data['largest_burst_size']} changes, "
+                    f"{burst_data['bursts_with_ocp']} with nearby OCP, "
+                    f"{burst_data['bursts_with_backend_reconnect']} with reconnect)"
+                )
+                analysis['issues'].append(issue_text)
+
+                if burst_data['bursts_with_ocp'] > 0 or burst_data['largest_burst_size'] >= 20:
                     analysis['status'] = 'Issue'
                 elif analysis['status'] == 'Clean':
                     analysis['status'] = 'Warning'
@@ -515,6 +554,8 @@ class ChargerAnalyzer:
                 analysis['issues'].append(f"⚠️ Meter register issue: {analysis['meter_register_tracking']['non_cumulative_count']} non-cumulative transactions (audit failure)")
                 if analysis['status'] == 'Clean':
                     analysis['status'] = 'Warning'
+
+            report_progress(100, "Completed")
         
         except Exception as e:
             print(f"Error analyzing {folder.name}: {e}")
@@ -547,10 +588,36 @@ class ChargerAnalyzer:
         
         # If only 1 charger or parallel disabled, use sequential processing
         if len(folders) == 1 or not parallel:
-            for folder in track(folders, description="[cyan]Analyzing chargers..."):
-                analysis = self.analyze_charger_log(folder)
-                if analysis:
-                    self.results.append(analysis)
+            with Progress(
+                SpinnerColumn(style="cyan"),
+                TextColumn("{task.description}"),
+                BarColumn(),
+                TaskProgressColumn(),
+                TimeElapsedColumn(),
+                console=console,
+                transient=False
+            ) as progress:
+                main_task = progress.add_task("[cyan]Analyzing chargers...", total=max(1, len(folders) * 100))
+
+                for index, folder in enumerate(folders, 1):
+                    base_progress = (index - 1) * 100
+                    progress.update(main_task, completed=base_progress)
+
+                    def folder_progress(percent, message=None):
+                        description = f"[cyan]Analyzing {folder.name} ({index}/{len(folders)})..."
+                        if message:
+                            description = f"[cyan]Analyzing {folder.name} ({index}/{len(folders)}) - {message}..."
+                        mapped_progress = base_progress + max(0, min(100, percent))
+                        progress.update(main_task, completed=mapped_progress, description=description)
+
+                    progress.update(
+                        main_task,
+                        description=f"[cyan]Analyzing {folder.name} ({index}/{len(folders)}) - Starting..."
+                    )
+                    analysis = self.analyze_charger_log(folder, progress_callback=folder_progress)
+                    if analysis:
+                        self.results.append(analysis)
+                    progress.update(main_task, completed=index * 100)
             console.print()
             return
         

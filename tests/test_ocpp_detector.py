@@ -137,6 +137,42 @@ class TestOcppDetector(unittest.TestCase):
         self.assertEqual(result['zero_current'], 0)
         self.assertEqual(len(result['examples']), 0)
 
+    def test_detect_change_configuration_bursts_with_ocp_correlation(self):
+        """Test detection of clustered ChangeConfiguration commands with OCP correlation."""
+        ocpp_log = self.storage_dir / "OCPP16J_Log.csv"
+        system_log = self.storage_dir / "SystemLog"
+
+        ocpp_lines = []
+        for idx, key in enumerate([
+            'AuthorizationKey', 'CardReaderEnabled', 'RfidReaderEnabled', 'NfcReaderEnabled',
+            'ISO15118PnCEnabled', 'LocalAuthListEnabled', 'LocalPreAuthorize', 'AuthorizeRemoteTxRequests',
+            'RemoteStartStopSupported', 'MeterValueSampleInterval'
+        ]):
+            second = 40 + idx
+            ocpp_lines.append(
+                f"Feb 23 21:27:{second:02d}.100 OpenWrt local7.info OpenWrt[2484]: "
+                f"[Info][OCPP16J]CommandParsing:tReg.tMsgCS.pu8Action=ChangeConfiguration,"
+                f"tReg.tMsgCS.pu8UniqID=test-{idx},key={key},value=false"
+            )
+
+        ocpp_log.write_text("\n".join(ocpp_lines) + "\n")
+
+        system_log.write_text(
+            "Feb 23 21:27:43.646 OpenWrt user.info InfraMgmt[2354]: [OCPP16J][ConfigTable] Write Success\n"
+            "Feb 23 21:27:44.646 OpenWrt user.info InfraMgmt[2354]: [Infra] Backend connection success\n"
+            "Feb 23 21:27:50.578 OpenWrt user.alert : [IntComm] AC output OCP\n"
+        )
+
+        result = OcppDetector.detect_change_configuration_bursts(self.test_dir)
+
+        self.assertEqual(result['total_changes'], 10)
+        self.assertEqual(result['burst_count'], 1)
+        self.assertEqual(result['largest_burst_size'], 10)
+        self.assertEqual(result['bursts_with_ocp'], 1)
+        self.assertEqual(result['bursts_with_backend_reconnect'], 1)
+        self.assertTrue(result['examples'])
+        self.assertGreater(result['examples'][0].get('configtable_writes', 0), 0)
+
 
 if __name__ == '__main__':
     unittest.main()

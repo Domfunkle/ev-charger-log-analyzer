@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 import json
 from pathlib import Path
+from datetime import datetime, timedelta
 from typing import Dict, List, Any, Set, Tuple
 from collections import OrderedDict
 
@@ -336,4 +337,210 @@ class OcppDetector:
             'count': len(low_current_profiles),
             'zero_current': zero_current_count,
             'examples': low_current_profiles[:10]  # First 10 examples
+        }
+
+    @staticmethod
+    def detect_change_configuration_bursts(folder: Path) -> Dict[str, Any]:
+        """Detect clustered ChangeConfiguration command bursts and related patterns.
+
+        Field pattern: backend reconnects can be followed by rapid ChangeConfiguration
+        storms (many keys in seconds), often mirrored by ConfigTable writes and sometimes
+        overlapping OCP/OCPP fault windows.
+
+        Args:
+            folder: Path to charger log folder
+
+        Returns:
+            Dict with aggregate counts and burst examples.
+        """
+        log_dir = folder / "Storage" / "SystemLog"
+        if not log_dir.exists():
+            return {
+                'total_changes': 0,
+                'unique_keys': 0,
+                'burst_count': 0,
+                'largest_burst_size': 0,
+                'bursts_with_ocp': 0,
+                'bursts_with_backend_reconnect': 0,
+                'examples': []
+            }
+
+        month_map = {
+            'Jan': 1, 'Feb': 2, 'Mar': 3, 'Apr': 4, 'May': 5, 'Jun': 6,
+            'Jul': 7, 'Aug': 8, 'Sep': 9, 'Oct': 10, 'Nov': 11, 'Dec': 12
+        }
+
+        timestamp_re = re.compile(
+            r'^(?P<mon>[A-Z][a-z]{2})\s+(?P<day>\d{1,2})\s+(?P<time>\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?)'
+        )
+
+        def parse_ts(line: str, year: int = 2026):
+            match = timestamp_re.match(line)
+            if not match:
+                return None
+            month = month_map.get(match.group('mon'))
+            if not month:
+                return None
+            day = int(match.group('day'))
+            time_part = match.group('time')
+            fmt = '%Y-%m-%d %H:%M:%S.%f' if '.' in time_part else '%Y-%m-%d %H:%M:%S'
+            try:
+                return datetime.strptime(f"{year}-{month:02d}-{day:02d} {time_part}", fmt)
+            except ValueError:
+                return None
+
+        ocpp_files = []
+        base_ocpp = log_dir / "OCPP16J_Log.csv"
+        if base_ocpp.exists():
+            ocpp_files.append(base_ocpp)
+        for i in range(10):
+            rotated = log_dir / f"OCPP16J_Log.csv.{i}"
+            if rotated.exists():
+                ocpp_files.append(rotated)
+
+        system_files = []
+        base_system = log_dir / "SystemLog"
+        if base_system.exists():
+            system_files.append(base_system)
+        for i in range(10):
+            rotated = log_dir / f"SystemLog.{i}"
+            if rotated.exists():
+                system_files.append(rotated)
+
+        change_entries = []
+        all_keys = set()
+        key_pattern = re.compile(
+            r'CommandParsing:tReg\.tMsgCS\.pu8Action=ChangeConfiguration.*?key=([^,\s]+)',
+            re.IGNORECASE
+        )
+
+        for ocpp_file in ocpp_files:
+            try:
+                with open(ocpp_file, 'r', encoding='utf-8', errors='ignore') as file_handle:
+                    for line in file_handle:
+                        if 'pu8Action=ChangeConfiguration' not in line:
+                            continue
+                        timestamp = parse_ts(line)
+                        if not timestamp:
+                            continue
+                        key_match = key_pattern.search(line)
+                        key_name = key_match.group(1) if key_match else 'Unknown'
+                        change_entries.append({'timestamp': timestamp, 'key': key_name, 'line': line.strip()})
+                        all_keys.add(key_name)
+            except Exception:
+                continue
+
+        change_entries.sort(key=lambda item: item['timestamp'])
+
+        if not change_entries:
+            return {
+                'total_changes': 0,
+                'unique_keys': 0,
+                'burst_count': 0,
+                'largest_burst_size': 0,
+                'bursts_with_ocp': 0,
+                'bursts_with_backend_reconnect': 0,
+                'examples': []
+            }
+
+        config_write_times = []
+        backend_times = []
+        ocp_times = []
+
+        for sys_file in system_files:
+            try:
+                with open(sys_file, 'r', encoding='utf-8', errors='ignore') as file_handle:
+                    for line in file_handle:
+                        timestamp = parse_ts(line)
+                        if not timestamp:
+                            continue
+                        if '[OCPP16J][ConfigTable] Write Success' in line:
+                            config_write_times.append(timestamp)
+                        if 'Backend connection fail' in line or 'Backend connection success' in line:
+                            backend_times.append(timestamp)
+                        if '[IntComm] AC output OCP' in line and 'recover' not in line.lower():
+                            ocp_times.append(timestamp)
+            except Exception:
+                continue
+
+        config_write_times.sort()
+        backend_times.sort()
+        ocp_times.sort()
+
+        burst_max_gap_seconds = 3
+        minimum_burst_size = 8
+        bursts = []
+        current_burst = [change_entries[0]]
+
+        for entry in change_entries[1:]:
+            previous = current_burst[-1]
+            gap_seconds = (entry['timestamp'] - previous['timestamp']).total_seconds()
+            if gap_seconds <= burst_max_gap_seconds:
+                current_burst.append(entry)
+            else:
+                if len(current_burst) >= minimum_burst_size:
+                    bursts.append(current_burst)
+                current_burst = [entry]
+
+        if len(current_burst) >= minimum_burst_size:
+            bursts.append(current_burst)
+
+        def count_between(series, start, end):
+            return sum(1 for timestamp in series if start <= timestamp <= end)
+
+        burst_examples = []
+        bursts_with_ocp = 0
+        bursts_with_reconnect = 0
+        largest_burst_size = 0
+
+        for burst in bursts:
+            start_time = burst[0]['timestamp']
+            end_time = burst[-1]['timestamp']
+            burst_size = len(burst)
+            largest_burst_size = max(largest_burst_size, burst_size)
+
+            burst_keys = []
+            seen_keys = set()
+            for item in burst:
+                if item['key'] not in seen_keys:
+                    burst_keys.append(item['key'])
+                    seen_keys.add(item['key'])
+
+            config_window_start = start_time - timedelta(seconds=10)
+            config_window_end = end_time + timedelta(seconds=10)
+            reconnect_window_start = start_time - timedelta(seconds=30)
+            reconnect_window_end = end_time + timedelta(seconds=30)
+            ocp_window_start = start_time - timedelta(seconds=45)
+            ocp_window_end = end_time + timedelta(seconds=45)
+
+            config_writes = count_between(config_write_times, config_window_start, config_window_end)
+            backend_reconnects = count_between(backend_times, reconnect_window_start, reconnect_window_end)
+            ocp_count = count_between(ocp_times, ocp_window_start, ocp_window_end)
+
+            if backend_reconnects > 0:
+                bursts_with_reconnect += 1
+            if ocp_count > 0:
+                bursts_with_ocp += 1
+
+            if len(burst_examples) < 5:
+                burst_examples.append({
+                    'start': start_time.strftime('%Y.%m.%d %H:%M:%S'),
+                    'end': end_time.strftime('%Y.%m.%d %H:%M:%S'),
+                    'duration_seconds': round((end_time - start_time).total_seconds(), 3),
+                    'change_count': burst_size,
+                    'unique_key_count': len(burst_keys),
+                    'keys': burst_keys[:15],
+                    'configtable_writes': config_writes,
+                    'backend_reconnect_events': backend_reconnects,
+                    'ocp_events_nearby': ocp_count
+                })
+
+        return {
+            'total_changes': len(change_entries),
+            'unique_keys': len(all_keys),
+            'burst_count': len(bursts),
+            'largest_burst_size': largest_burst_size,
+            'bursts_with_ocp': bursts_with_ocp,
+            'bursts_with_backend_reconnect': bursts_with_reconnect,
+            'examples': burst_examples
         }
