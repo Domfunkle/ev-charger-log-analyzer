@@ -180,7 +180,7 @@ When adding new knowledge:
 
 ---
 
-**Last Updated:** 2026-01-26  
-**Total Documents:** 11 knowledge docs + master index  
-**Total Lines:** ~1,900 lines (was 1,535 in monolithic file, now organized and cross-linked)  
+**Last Updated:** 2026-02-27  
+**Total Documents:** 13 knowledge docs (+ overview README) + master index  
+**Total Lines:** ~6,000+ lines across modular docs (organized and cross-linked)  
 **Philosophy:** "Modular knowledge is maintainable knowledge"

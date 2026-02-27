@@ -262,6 +262,36 @@ Reg 40204 = 0x0000  (Fallback power = 0W) ← CAUSES LIMIT_toNoPower
 5. "Is there a local load management system installed?"
 6. "Was there previously an LMS that was removed/disconnected?"
 
+### Field Rule: Modbus Write Hygiene (Critical)
+
+When recovering a charger with suspected Modbus register drift:
+
+1. **Write valid operational values once** (known-good production values)
+2. **Do NOT write zero as a generic reset** for "unused" or unknown registers
+3. Return to **read-only monitoring** after recovery write
+4. Ensure there is **one write owner** (avoid multiple masters writing limits)
+
+Why this matters:
+- Some registers require non-zero baseline values for stable behavior
+- Repeated or zeroed writes can create unexpected limiting behavior and false OCP narratives
+
+### Field Pattern: OCP Before EVLM Profile Application
+
+Observed in recent field cases:
+- OCP is reported **before first EVLM profile is applied**
+- Charger should start at 6A baseline, yet OCP still occurs
+- Controlled test at ~12A can still report OCP
+
+Interpretation:
+- Treat this as potential **control/sensing/config integrity issue**, not automatically EV overcurrent
+- EVLM profile timing may not be the immediate trigger when OCP appears early in session timeline
+
+Practical checks:
+- Validate current sensing path (CT orientation/wiring/calibration)
+- Confirm DIP/OCPP/Modbus limits are coherent
+- Confirm no third-party Modbus master is writing limiter registers
+- Correlate OCP timestamps against first EVLM profile write timestamps
+
 ### Resolution
 
 **Method 1: Factory Reset (Easiest)**

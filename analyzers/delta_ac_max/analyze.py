@@ -19,6 +19,7 @@ import argparse
 import re
 import sys
 import os
+from collections import Counter
 from pathlib import Path
 from multiprocessing import Pool, Manager, cpu_count
 from rich.console import Console
@@ -28,7 +29,7 @@ from rich.table import Table
 from rich.panel import Panel
 import time
 
-console = Console()
+console = Console(highlight=False)
 
 # Fix Windows encoding issues with Unicode characters
 if sys.platform == 'win32':
@@ -42,6 +43,7 @@ if sys.platform == 'win32':
 
 # Import modular components
 from .detectors import EventDetector, OcppDetector, OcppTransactionDetector, FirmwareDetector, HardwareDetector, LmsDetector, StateMachineDetector
+from .error_codes import ERROR_CODES
 from .reporter import Reporter
 from .utils import extract_zips
 
@@ -243,6 +245,377 @@ class ChargerAnalyzer:
             
         except Exception as e:
             return 'Unknown'
+
+    def _normalize_event_timestamp_year(self, event_timestamp: str, rtc_syncs: list = None) -> str:
+        """Normalize stale EventLog year values using RTC sync anchors.
+
+        Event CSV timestamps can occasionally carry stale years (e.g., 2024)
+        while system logs and RTC anchors indicate current operation in 2026.
+        When mismatch is large, preserve month/day/time and replace only year.
+        """
+        from datetime import datetime
+
+        if not rtc_syncs:
+            return event_timestamp
+
+        try:
+            event_dt = datetime.strptime(event_timestamp, '%Y.%m.%d %H:%M:%S')
+        except Exception:
+            return event_timestamp
+
+        inferred_year = self._infer_year_from_rtc(event_dt.month, event_dt.day, rtc_syncs)
+        if not inferred_year:
+            return event_timestamp
+
+        # Adjust only when mismatch is clearly stale/noisy
+        if abs(event_dt.year - inferred_year) < 2:
+            return event_timestamp
+
+        try:
+            normalized_dt = event_dt.replace(year=inferred_year)
+            return normalized_dt.strftime('%Y.%m.%d %H:%M:%S')
+        except Exception:
+            return event_timestamp
+
+    def _summarize_connectivity_events(self, events):
+        """Summarize connectivity-related event and recovery codes from EventLog.
+
+        Includes EV0117-EV0126 (connectivity faults) and their numeric recovery
+        forms (111002-111011).
+        """
+        connectivity_fault_codes = [
+            'EV0117', 'EV0118', 'EV0119', 'EV0120', 'EV0121',
+            'EV0122', 'EV0123', 'EV0124', 'EV0125', 'EV0126'
+        ]
+
+        recovery_to_fault = {}
+        for idx, fault_code in enumerate(connectivity_fault_codes):
+            numeric_code = 11002 + idx
+            recovery_code = f"1{numeric_code:05d}"
+            recovery_to_fault[recovery_code] = fault_code
+
+        fault_counter = Counter()
+        recovery_counter = Counter()
+        fault_type_counter = Counter()
+        recovery_type_counter = Counter()
+        examples = []
+
+        for event in events:
+            code = event.get('code', '')
+
+            if code in connectivity_fault_codes:
+                fault_counter[code] += 1
+                fault_desc = ERROR_CODES.get(code, {}).get('desc', code)
+                fault_type_counter[fault_desc] += 1
+                if len(examples) < 8:
+                    examples.append({
+                        'timestamp': event.get('timestamp') or 'Unknown',
+                        'code': code,
+                        'description': fault_desc,
+                        'kind': 'fault'
+                    })
+                continue
+
+            mapped_fault = recovery_to_fault.get(code)
+            if mapped_fault:
+                recovery_counter[code] += 1
+                recovery_desc = ERROR_CODES.get(mapped_fault, {}).get('desc', mapped_fault)
+                recovery_type_counter[recovery_desc] += 1
+                if len(examples) < 8:
+                    examples.append({
+                        'timestamp': event.get('timestamp') or 'Unknown',
+                        'code': code,
+                        'description': recovery_desc,
+                        'kind': 'recovery'
+                    })
+
+        fault_by_code = dict(sorted(fault_counter.items(), key=lambda item: item[1], reverse=True))
+        recovery_by_code = dict(sorted(recovery_counter.items(), key=lambda item: item[1], reverse=True))
+        fault_by_type = dict(sorted(fault_type_counter.items(), key=lambda item: item[1], reverse=True))
+        recovery_by_type = dict(sorted(recovery_type_counter.items(), key=lambda item: item[1], reverse=True))
+
+        fault_total = sum(fault_counter.values())
+        recovery_total = sum(recovery_counter.values())
+
+        return {
+            'fault_total': fault_total,
+            'recovery_total': recovery_total,
+            'total': fault_total + recovery_total,
+            'fault_by_code': fault_by_code,
+            'recovery_by_code': recovery_by_code,
+            'fault_by_type': fault_by_type,
+            'recovery_by_type': recovery_by_type,
+            'examples': examples
+        }
+
+    def _collect_system_log_entries(self, folder):
+        """Collect timestamped lines from SystemLog and rotated files."""
+        from datetime import datetime
+
+        system_log_dir = folder / "Storage" / "SystemLog"
+        if not system_log_dir.exists():
+            return []
+
+        system_files = []
+        system_base = system_log_dir / "SystemLog"
+        if system_base.exists():
+            system_files.append(system_base)
+
+        for i in range(10):
+            rotated = system_log_dir / f"SystemLog.{i}"
+            if rotated.exists():
+                system_files.append(rotated)
+
+        timestamp_pattern = re.compile(r'^(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2})\.\d+\s+')
+        entries = []
+
+        for sys_file in system_files:
+            try:
+                with open(sys_file, 'r', encoding='utf-8', errors='ignore') as file_handle:
+                    for line in file_handle:
+                        match = timestamp_pattern.match(line)
+                        if not match:
+                            continue
+                        try:
+                            timestamp = datetime.strptime(f"2000 {match.group(1)}", '%Y %b %d %H:%M:%S')
+                            entries.append((timestamp, line.strip()))
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+
+        entries.sort(key=lambda item: item[0])
+        return entries
+
+    def _collect_ocpp_log_entries(self, folder):
+        """Collect timestamped lines from OCPP16J logs and rotated files."""
+        from datetime import datetime
+
+        system_log_dir = folder / "Storage" / "SystemLog"
+        if not system_log_dir.exists():
+            return []
+
+        ocpp_files = sorted(system_log_dir.glob("OCPP16J_Log.csv*"))
+        if not ocpp_files:
+            return []
+
+        timestamp_pattern = re.compile(r'^(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2})\.\d+\s+')
+        entries = []
+
+        for ocpp_file in ocpp_files:
+            try:
+                with open(ocpp_file, 'r', encoding='utf-8', errors='ignore') as file_handle:
+                    for line in file_handle:
+                        match = timestamp_pattern.match(line)
+                        if not match:
+                            continue
+                        try:
+                            timestamp = datetime.strptime(f"2000 {match.group(1)}", '%Y %b %d %H:%M:%S')
+                            entries.append((timestamp, line.strip()))
+                        except Exception:
+                            continue
+            except Exception:
+                continue
+
+        entries.sort(key=lambda item: item[0])
+        return entries
+
+    def _parse_to_systemlog_clock(self, timestamp_str):
+        """Parse timestamp string into SystemLog comparable clock (fixed year)."""
+        from datetime import datetime
+
+        if not timestamp_str:
+            return None
+
+        parsed = None
+        for fmt in ('%Y.%m.%d %H:%M:%S', '%b %d %H:%M:%S.%f', '%b %d %H:%M:%S'):
+            try:
+                parsed = datetime.strptime(timestamp_str, fmt)
+                break
+            except Exception:
+                continue
+
+        if not parsed:
+            match = re.match(r'^(\w{3}\s+\d+\s+\d{2}:\d{2}:\d{2}(?:\.\d+)?)', str(timestamp_str))
+            if match:
+                return self._parse_to_systemlog_clock(match.group(1))
+            return None
+
+        try:
+            return datetime(2000, parsed.month, parsed.day, parsed.hour, parsed.minute, parsed.second)
+        except Exception:
+            return None
+
+    def _analyze_leadup_context(self, entries, event_points, window_seconds=60, sample_limit=2, max_events=None, ocpp_entries=None):
+        """Analyze common log patterns before arbitrary event timestamps."""
+        from bisect import bisect_left, bisect_right
+        from datetime import timedelta
+
+        if not entries or not event_points:
+            return {
+                'event_count': 0,
+                'total_event_points': len(event_points) if event_points else 0,
+                'window_seconds': window_seconds,
+                'marker_counts': {},
+                'marker_rates': {},
+                'ocpp_marker_counts': {},
+                'ocpp_marker_rates': {},
+                'ocpp_top_operations': [],
+                'immediate_previous': {},
+                'samples': [],
+                'ocpp_samples': []
+            }
+
+        total_event_points = len(event_points)
+        if max_events and total_event_points > max_events:
+            event_points = event_points[-max_events:]
+
+        markers = {
+            'suspend_charging': 'Schedule function suspend charging',
+            'intcomm_get_time': '[IntComm] Get Date Time Command',
+            'intcomm_write_time': '[IntComm] Write Date Time:',
+            'wifi_scan_trigger': '[WiFi] Trigger WiFi STA Scan Action',
+            'wifi_scan_no_ap': '[WiFi] Scan AP number is -1',
+            'config_write_success': '[OCPP16J][ConfigTable] Write Success'
+        }
+
+        ocpp_markers = {
+            'change_configuration': 'changeconfiguration',
+            'rejected_response': '"status":"rejected"',
+            'remote_start': 'remotestarttransaction',
+            'set_charging_profile': 'setchargingprofile',
+            'boot_notification': 'bootnotification',
+            'heartbeat': 'heartbeat',
+            'status_notification': 'statusnotification',
+            'ocpp_timeout': 'time out'
+        }
+
+        marker_counts = Counter()
+        ocpp_marker_counts = Counter()
+        ocpp_operation_counts = Counter()
+        previous_categories = Counter()
+        samples = []
+        ocpp_samples = []
+
+        timeline = [item[0] for item in entries]
+        ocpp_timeline = [item[0] for item in ocpp_entries] if ocpp_entries else []
+
+        for point in event_points:
+            event_time = point.get('timestamp')
+            if not event_time:
+                continue
+
+            window_start = event_time - timedelta(seconds=window_seconds)
+            window_start_idx = bisect_left(timeline, window_start)
+            window_end_idx = bisect_left(timeline, event_time)
+            window_entries = [line for _, line in entries[window_start_idx:window_end_idx]]
+
+            ocpp_window_entries = []
+            if ocpp_entries:
+                ocpp_window_start_idx = bisect_left(ocpp_timeline, window_start)
+                ocpp_window_end_idx = bisect_left(ocpp_timeline, event_time)
+                ocpp_window_entries = [line for _, line in ocpp_entries[ocpp_window_start_idx:ocpp_window_end_idx]]
+
+            for marker_name, marker_token in markers.items():
+                if any(marker_token in line for line in window_entries):
+                    marker_counts[marker_name] += 1
+
+            if ocpp_window_entries:
+                lowered_ocpp_entries = [line.lower() for line in ocpp_window_entries]
+                for marker_name, marker_token in ocpp_markers.items():
+                    if any(marker_token in line for line in lowered_ocpp_entries):
+                        ocpp_marker_counts[marker_name] += 1
+
+                operations_in_window = set()
+                for line in ocpp_window_entries:
+                    operation_match = re.search(r'\[OCPP16J\]\s*([A-Za-z0-9_]+)', line)
+                    if not operation_match:
+                        continue
+                    operation_name = operation_match.group(1)
+                    operation_name = re.sub(r'(Req|Conf|ResultParsing|Callback|CALLBACK)$', '', operation_name)
+                    if operation_name and len(operation_name) <= 50:
+                        operations_in_window.add(operation_name)
+
+                for operation_name in operations_in_window:
+                    ocpp_operation_counts[operation_name] += 1
+
+            prev_index = bisect_right(timeline, event_time) - 1
+            if prev_index >= 0:
+                previous_line = entries[prev_index][1]
+                if markers['suspend_charging'] in previous_line:
+                    previous_categories['suspend_charging'] += 1
+                elif markers['intcomm_write_time'] in previous_line:
+                    previous_categories['intcomm_write_time'] += 1
+                elif markers['wifi_scan_no_ap'] in previous_line:
+                    previous_categories['wifi_scan_no_ap'] += 1
+                elif markers['wifi_scan_trigger'] in previous_line:
+                    previous_categories['wifi_scan_trigger'] += 1
+                elif markers['config_write_success'] in previous_line:
+                    previous_categories['config_write_success'] += 1
+                else:
+                    previous_categories['other'] += 1
+
+            if len(samples) < sample_limit:
+                samples.append({
+                    'event_label': point.get('label', 'event'),
+                    'event_line': point.get('line', ''),
+                    'leadup_lines': window_entries[-5:]
+                })
+
+            if ocpp_window_entries and len(ocpp_samples) < sample_limit:
+                ocpp_samples.append({
+                    'event_label': point.get('label', 'event'),
+                    'event_line': point.get('line', ''),
+                    'leadup_lines': ocpp_window_entries[-5:]
+                })
+
+        event_count = len(event_points)
+        marker_rates = {
+            name: round((count / event_count) * 100, 1)
+            for name, count in marker_counts.items()
+        }
+        ocpp_marker_rates = {
+            name: round((count / event_count) * 100, 1)
+            for name, count in ocpp_marker_counts.items()
+        }
+        top_ocpp_operations = []
+        for operation_name, count in ocpp_operation_counts.most_common(5):
+            top_ocpp_operations.append({
+                'name': operation_name,
+                'count': count,
+                'rate': round((count / event_count) * 100, 1)
+            })
+
+        return {
+            'event_count': event_count,
+            'total_event_points': total_event_points,
+            'window_seconds': window_seconds,
+            'marker_counts': dict(marker_counts),
+            'marker_rates': marker_rates,
+            'ocpp_marker_counts': dict(ocpp_marker_counts),
+            'ocpp_marker_rates': ocpp_marker_rates,
+            'ocpp_top_operations': top_ocpp_operations,
+            'immediate_previous': dict(previous_categories),
+            'samples': samples,
+            'ocpp_samples': ocpp_samples
+        }
+
+    def _analyze_backend_fail_leadup(self, folder, window_seconds=60, entries=None, ocpp_entries=None):
+        """Analyze common log patterns immediately before backend disconnect events."""
+        if entries is None:
+            entries = self._collect_system_log_entries(folder)
+        points = []
+        for timestamp, line in entries:
+            if '[Infra] Backend connection fail' in line:
+                points.append({
+                    'timestamp': timestamp,
+                    'label': 'backend_connection_fail',
+                    'line': line
+                })
+
+        summary = self._analyze_leadup_context(entries, points, window_seconds=window_seconds, sample_limit=3, ocpp_entries=ocpp_entries)
+        summary['fail_count'] = summary.get('event_count', 0)
+        return summary
     
     def extract_zips_wrapper(self, specific_files=None):
         """Wrapper for extract_zips utility function
@@ -298,6 +671,15 @@ class ChargerAnalyzer:
             'firmware_version': None,
             'backend_disconnects': 0,
             'backend_disconnect_examples': [],
+            'backend_fail_leadup': {
+                'fail_count': 0,
+                'window_seconds': 60,
+                'marker_counts': {},
+                'marker_rates': {},
+                'immediate_previous': {},
+                'samples': []
+            },
+            'event_leadup': {},
             'mcu_errors': 0,
             'mcu_error_examples': [],
             'error_count': 0,
@@ -307,6 +689,16 @@ class ChargerAnalyzer:
             'log_file': str(system_log),
             'events': [],
             'critical_events': [],
+            'connectivity_events': {
+                'fault_total': 0,
+                'recovery_total': 0,
+                'total': 0,
+                'fault_by_code': {},
+                'recovery_by_code': {},
+                'fault_by_type': {},
+                'recovery_by_type': {},
+                'examples': []
+            },
             'charging_profile_timeouts': {'count': 0, 'examples': []},
             'ocpp_rejections': {'total': 0, 'by_type': {}, 'examples': []},
             'change_config_bursts': {'total_changes': 0, 'unique_keys': 0, 'burst_count': 0, 'largest_burst_size': 0, 'bursts_with_ocp': 0, 'bursts_with_backend_reconnect': 0, 'examples': []},
@@ -360,6 +752,16 @@ class ChargerAnalyzer:
         # Parse RTC syncs for accurate year inference
         report_progress(84, "Building RTC timeline")
         rtc_syncs = self._parse_rtc_syncs(folder)
+
+        # Normalize event years when EventLog timestamps are stale vs RTC timeline
+        for event in events:
+            original_timestamp = event.get('timestamp', '')
+            normalized_timestamp = self._normalize_event_timestamp_year(original_timestamp, rtc_syncs)
+            if normalized_timestamp != original_timestamp:
+                event['original_timestamp'] = original_timestamp
+                event['timestamp'] = normalized_timestamp
+
+        analysis['connectivity_events'] = self._summarize_connectivity_events(events)
         
         # Identify critical events
         critical_codes = ['EV0081', 'EV0082', 'EV0083', 'EV0084', 'EV0085', 'EV0086', 'EV0087',
@@ -371,16 +773,77 @@ class ChargerAnalyzer:
         # Get firmware history for correlation
         fw_history = analysis['firmware_updates'].get('firmware_history', [])
         
-        # Add log context and firmware version for each critical event
+        # Determine firmware version for all critical events (cheap)
         for event in critical_events:
-            context = self.event_detector.get_log_context(folder, event['timestamp'], window_minutes=5)
-            event['context'] = context
-            
-            # Determine which firmware version was active when this event occurred
-            # Now using RTC syncs for accurate year inference
+            event['context'] = {}
             event['firmware_at_event'] = self._get_firmware_at_timestamp(event['timestamp'], fw_history, rtc_syncs)
+
+        # Expensive log context extraction: only for top events shown in report
+        # (detailed report currently displays 5 most recent critical events)
+        report_progress(85, "Collecting critical event context")
+        context_targets = sorted(critical_events, key=lambda e: e.get('timestamp') or '', reverse=True)[:5]
+        for event in context_targets:
+            event['context'] = self.event_detector.get_log_context(folder, event['timestamp'], window_minutes=5)
         
         analysis['critical_events'] = critical_events
+
+        # Build generalized lead-up summaries for reported event types
+        report_progress(86, "Analyzing lead-up context")
+        system_entries = self._collect_system_log_entries(folder)
+        ocpp_entries = self._collect_ocpp_log_entries(folder)
+        backend_leadup = self._analyze_backend_fail_leadup(folder, window_seconds=60, entries=system_entries, ocpp_entries=ocpp_entries)
+        analysis['backend_fail_leadup'] = backend_leadup
+
+        critical_points = []
+        for event in critical_events:
+            leadup_ts = self._parse_to_systemlog_clock(event.get('timestamp'))
+            if leadup_ts:
+                critical_points.append({
+                    'timestamp': leadup_ts,
+                    'label': event.get('code', 'critical_event'),
+                    'line': f"{event.get('timestamp', '')} - {event.get('code', '')}"
+                })
+
+        connectivity_fault_codes = {'EV0117', 'EV0118', 'EV0119', 'EV0120', 'EV0121', 'EV0122', 'EV0123', 'EV0124', 'EV0125', 'EV0126'}
+        connectivity_points = []
+        for event in events:
+            if event.get('code') not in connectivity_fault_codes:
+                continue
+            leadup_ts = self._parse_to_systemlog_clock(event.get('timestamp'))
+            if leadup_ts:
+                connectivity_points.append({
+                    'timestamp': leadup_ts,
+                    'label': event.get('code', 'connectivity_fault'),
+                    'line': f"{event.get('timestamp', '')} - {event.get('code', '')}"
+                })
+
+        lost_tx_points = []
+        for example in analysis['lost_transaction_id'].get('examples', []):
+            leadup_ts = self._parse_to_systemlog_clock(example.get('timestamp'))
+            if leadup_ts:
+                lost_tx_points.append({
+                    'timestamp': leadup_ts,
+                    'label': 'lost_transaction_id',
+                    'line': f"{example.get('timestamp', '')} - {example.get('message', '')}"
+                })
+
+        rejection_points = []
+        for example in analysis['ocpp_rejections'].get('examples', []):
+            leadup_ts = self._parse_to_systemlog_clock(example)
+            if leadup_ts:
+                rejection_points.append({
+                    'timestamp': leadup_ts,
+                    'label': 'ocpp_rejection',
+                    'line': str(example)
+                })
+
+        analysis['event_leadup'] = {
+            'backend_disconnect': backend_leadup,
+            'critical_events': self._analyze_leadup_context(system_entries, critical_points, window_seconds=60, ocpp_entries=ocpp_entries),
+            'connectivity_fault_events': self._analyze_leadup_context(system_entries, connectivity_points, window_seconds=60, max_events=1000, ocpp_entries=ocpp_entries),
+            'lost_transaction_id': self._analyze_leadup_context(system_entries, lost_tx_points, window_seconds=60, ocpp_entries=ocpp_entries),
+            'ocpp_rejections': self._analyze_leadup_context(system_entries, rejection_points, window_seconds=60, ocpp_entries=ocpp_entries),
+        }
         
         # Parse system log for baseline metrics
         try:
@@ -445,6 +908,21 @@ class ChargerAnalyzer:
             if analysis['critical_events']:
                 analysis['issues'].append(f"Critical hardware events: {len(analysis['critical_events'])}")
                 analysis['status'] = 'Issue'
+
+            connectivity = analysis.get('connectivity_events', {})
+            if connectivity.get('total', 0) > 0:
+                top_types = list(connectivity.get('fault_by_type', {}).items())[:3]
+                top_text = ', '.join([f"{name}:{count}" for name, count in top_types])
+                issue = (
+                    f"Connectivity events: {connectivity.get('total', 0)} "
+                    f"({connectivity.get('fault_total', 0)} faults, {connectivity.get('recovery_total', 0)} recoveries)"
+                )
+                if top_text:
+                    issue += f" ({top_text})"
+                analysis['issues'].append(issue)
+
+                if connectivity.get('fault_total', 0) >= 20 and analysis['status'] == 'Clean':
+                    analysis['status'] = 'Warning'
             
             if analysis['charging_profile_timeouts']['count'] > 100:
                 analysis['issues'].append(f"⚠️ CRITICAL: SetChargingProfile timeouts: {analysis['charging_profile_timeouts']['count']}")
@@ -647,7 +1125,7 @@ class ChargerAnalyzer:
         
         # Initialize all chargers as queued
         for charger_id in charger_ids:
-            progress_dict[charger_id] = {'status': 'Queued', 'progress': 0}
+            progress_dict[charger_id] = {'status': 'Queued', 'progress': 0, 'message': 'Queued'}
         
         # Prepare worker arguments
         worker_args = [
@@ -658,21 +1136,23 @@ class ChargerAnalyzer:
         # Start parallel processing with live progress display
         results_map = {}
         
-        with Live(_create_progress_table(progress_dict, charger_ids), refresh_per_second=2, console=console) as live:
+        spinner_frame = 0
+        with Live(_create_progress_table(progress_dict, charger_ids, spinner_frame=spinner_frame), refresh_per_second=6, console=console) as live:
             with Pool(processes=num_workers) as pool:
                 # Submit all jobs
                 async_results = pool.map_async(_analyze_single_charger_worker, worker_args)
                 
                 # Monitor progress and update display
                 while not async_results.ready():
-                    live.update(_create_progress_table(progress_dict, charger_ids))
-                    time.sleep(0.5)
+                    spinner_frame += 1
+                    live.update(_create_progress_table(progress_dict, charger_ids, spinner_frame=spinner_frame))
+                    time.sleep(0.15)
                 
                 # Get final results
                 results = async_results.get()
                 
                 # Final update
-                live.update(_create_progress_table(progress_dict, charger_ids))
+                live.update(_create_progress_table(progress_dict, charger_ids, spinner_frame=spinner_frame))
         
         # Clear the progress table (as requested by user)
         console.print()
@@ -683,9 +1163,7 @@ class ChargerAnalyzer:
                 console.print(f"[red]✗ Error analyzing {charger_id}: {error}[/red]")
             elif analysis:
                 self.results.append(analysis)
-                # Display results immediately as they complete
-                Reporter.generate_summary_report([analysis])
-                console.print()
+                # Aggregate all results and render a single combined report later
         
         console.print()
     
@@ -711,30 +1189,37 @@ def _analyze_single_charger_worker(args):
     folder_path, log_directory, progress_dict, charger_id = args
     
     try:
-        # Update progress: Analyzing
-        progress_dict[charger_id] = {'status': 'Analyzing', 'progress': 30}
+        # Update progress: starting worker
+        progress_dict[charger_id] = {'status': 'Analyzing', 'progress': 5, 'message': 'Starting'}
         
         # Create analyzer instance (each worker needs its own)
         analyzer = ChargerAnalyzer(log_directory)
         
-        # Analyze the charger
-        progress_dict[charger_id] = {'status': 'Analyzing', 'progress': 50}
-        analysis = analyzer.analyze_charger_log(Path(folder_path))
+        # Analyze the charger with phase-aware progress callback
+        def worker_progress(percent, message=None):
+            safe_percent = max(0, min(99, int(percent)))
+            progress_dict[charger_id] = {
+                'status': 'Analyzing',
+                'progress': safe_percent,
+                'message': message or 'Analyzing'
+            }
+
+        analysis = analyzer.analyze_charger_log(Path(folder_path), progress_callback=worker_progress)
         
-        progress_dict[charger_id] = {'status': 'Analyzing', 'progress': 90}
+        progress_dict[charger_id] = {'status': 'Analyzing', 'progress': 99, 'message': 'Finalizing'}
         
         # Mark as complete
-        progress_dict[charger_id] = {'status': 'Complete', 'progress': 100}
+        progress_dict[charger_id] = {'status': 'Complete', 'progress': 100, 'message': 'Completed'}
         
         return (charger_id, analysis, None)
         
     except Exception as e:
         # Mark as failed
-        progress_dict[charger_id] = {'status': 'Error', 'progress': 0}
+        progress_dict[charger_id] = {'status': 'Error', 'progress': 0, 'message': 'Error'}
         return (charger_id, None, str(e))
 
 
-def _create_progress_table(progress_dict, charger_ids):
+def _create_progress_table(progress_dict, charger_ids, spinner_frame=0):
     """Create Rich table showing analysis progress
     
     Args:
@@ -744,15 +1229,20 @@ def _create_progress_table(progress_dict, charger_ids):
     Returns:
         Rich Table object
     """
+    spinner_frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
+    spinner = spinner_frames[spinner_frame % len(spinner_frames)]
+
     table = Table(title="Analysis Progress", show_header=True, header_style="bold cyan")
     table.add_column("Charger ID", style="cyan", width=20)
     table.add_column("Status", width=12)
+    table.add_column("Phase", width=34)
     table.add_column("Progress", width=30)
     
     for charger_id in charger_ids:
-        info = progress_dict.get(charger_id, {'status': 'Queued', 'progress': 0})
+        info = progress_dict.get(charger_id, {'status': 'Queued', 'progress': 0, 'message': ''})
         status = info['status']
         progress = info['progress']
+        phase = info.get('message', '')
         
         # Color code status
         if status == 'Complete':
@@ -760,7 +1250,7 @@ def _create_progress_table(progress_dict, charger_ids):
         elif status == 'Error':
             status_text = "[red]✗ Error[/red]"
         elif status == 'Analyzing':
-            status_text = "[yellow]⚙ Analyzing[/yellow]"
+            status_text = f"[yellow]{spinner} Analyzing[/yellow]"
         elif status == 'Extracting':
             status_text = "[blue]📦 Extracting[/blue]"
         else:  # Queued
@@ -772,7 +1262,11 @@ def _create_progress_table(progress_dict, charger_ids):
         bar = "█" * filled + "░" * (bar_width - filled)
         progress_text = f"[cyan]{bar}[/cyan] {progress}%"
         
-        table.add_row(charger_id, status_text, progress_text)
+        phase_text = phase if phase else '-'
+        if len(phase_text) > 32:
+            phase_text = phase_text[:29] + '...'
+
+        table.add_row(charger_id, status_text, phase_text, progress_text)
     
     return table
 
@@ -834,9 +1328,8 @@ Examples:
     # Analyze chargers (specific folders if -z was used, otherwise all)
     analyzer.analyze_all_chargers(specific_folders=folders_to_analyze)
     
-    # For single charger analysis, generate combined report
-    # (Parallel analysis already displays results as they complete)
-    if len(analyzer.results) == 1 or (folders_to_analyze and len(folders_to_analyze) == 1):
+    # Generate a single combined report for all analyzed chargers
+    if analyzer.results:
         analyzer.generate_summary_report()
     
     console.print("[bold green]✓ Analysis complete![/bold green]\n")

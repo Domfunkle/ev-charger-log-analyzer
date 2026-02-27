@@ -224,6 +224,16 @@ Always ensure:
 
 ## Common Workflows
 
+### Mandatory Runtime Validation (Do Not Skip)
+For any code change to analyzer logic, reporting, parsing, or exports, validate using the executable workflow below:
+
+1. Change directory to the folder containing the `.zip` charger logs (for this repo: `examples/delta_ac_max/`)
+2. Run the executable from PATH: `delta-ac-max-analyzer.exe`
+3. Use flags only when needed (e.g., `--no-extract` when reusing already extracted folders)
+4. Confirm runtime completes without errors before finalizing
+
+This executable-based validation is required even if unit tests pass.
+
 ### Diagnosing a Charger Issue
 1. Check [Error Codes](knowledge-base/reference/error_codes.md) for EVXXXX codes
 2. Review [Pattern Knowledge](knowledge-base/patterns/) for log patterns

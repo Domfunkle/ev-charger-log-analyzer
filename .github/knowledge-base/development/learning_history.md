@@ -5,6 +5,46 @@
 
 ---
 
+## v0.0.12 - Field Actions Refinement: Modbus Write Hygiene + Early OCP Interpretation (2026-02-27)
+
+### Overview
+Captured new field learnings from service communication review:
+- ChangeConfiguration storms likely tied to upstream replay policy,
+- OCP can appear before first EVLM profile application,
+- Modbus recovery should use one-time known-good writes (no zeroing),
+- simplified service-tech action plan improves execution quality.
+
+### What Was Learned
+
+1. **EY/CSMS replay behavior matters operationally**
+  - Repeated reconnect-time key storms can overwhelm clarity and stability.
+  - Ask EY to confirm AC MAX onboarding and key allowlist strategy.
+
+2. **OCP timing context is critical**
+  - OCP reported before EVLM profile application weakens direct EVLM-causality assumptions.
+  - OCP at low test current (including ~12A field check) suggests possible control/sensing/config path issue.
+
+3. **Modbus write hygiene rule**
+  - Restore valid values once; avoid writing zeros to unknown/unused registers.
+  - After recovery, return to read-only posture unless controlled change is required.
+
+### Documentation Updated
+
+- `patterns/current_limiting.md`
+  - Added "Modbus Write Hygiene" rule set
+  - Added "OCP Before EVLM Profile" interpretation guidance
+- `case-studies/kkb241600082we_changeconfig_bursts.md`
+  - Added field learnings section
+  - Added simplified service-tech plan used in customer-facing comms
+
+### Operational Impact
+
+- Improves technician guidance quality for mixed OCP/reconnect scenarios
+- Reduces risk of introducing faults during Modbus remediation
+- Improves escalation quality when coordinating with EY/CSMS
+
+---
+
 ## v0.0.11 - ChangeConfiguration Burst Correlation (2026-02-26)
 
 ### Overview

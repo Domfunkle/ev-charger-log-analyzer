@@ -75,6 +75,46 @@ Cross-check with:
 
 ---
 
+## Additional Field Learnings (2026-02-27)
+
+### 1) ChangeConfiguration Storms: likely upstream replay policy
+
+Field interpretation:
+- EY/CSMS appears to replay broad key sets, including keys not necessarily relevant to AC MAX
+- Charger may tolerate this traffic, but burst volume creates operational noise and may contribute to instability
+
+Action for EY/CSMS:
+- Confirm Delta AC MAX onboarding/profile support
+- Use only required key allowlist
+- Avoid reconnect-time full replay storms
+
+### 2) OCP not always explained by EVLM profile timing
+
+Observed behavior:
+- OCP can appear before first EVLM profile is sent/applied
+- Test charging around 12A still reported OCP in field feedback
+
+Interpretation:
+- Possible limit-path or sensing-path integrity issue
+- Not sufficient to assume true vehicle overcurrent from OCP label alone
+
+### 3) Modbus handling rule from field
+
+If registers were altered:
+- Restore known-good values once
+- Do **not** write zero to "unused" registers as a reset shortcut
+- After restore, avoid continuous write loops
+
+### 4) Service-tech simplified plan (used in comms)
+
+1. Stop EY config storms and validate key set relevance
+2. Check Modbus write ownership (single owner, no zeroing)
+3. Check site network stability (cables/ports/upstream drops)
+4. Upgrade charger firmware (factory reset + recommission)
+5. Upgrade EVLM firmware (no factory reset)
+
+---
+
 ## Related Docs
 
 - [OCPP Protocol](../patterns/ocpp_protocol.md)

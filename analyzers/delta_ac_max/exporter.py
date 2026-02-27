@@ -61,6 +61,21 @@ class CsvExporter:
                 'ChangeConfig_Largest_Burst': result.get('change_config_bursts', {}).get('largest_burst_size', 0),
                 'ChangeConfig_Bursts_With_OCP': result.get('change_config_bursts', {}).get('bursts_with_ocp', 0),
                 'ChangeConfig_Bursts_With_Reconnect': result.get('change_config_bursts', {}).get('bursts_with_backend_reconnect', 0),
+                'Connectivity_Events_Total': result.get('connectivity_events', {}).get('total', 0),
+                'Connectivity_Fault_Events': result.get('connectivity_events', {}).get('fault_total', 0),
+                'Connectivity_Recovery_Events': result.get('connectivity_events', {}).get('recovery_total', 0),
+                'Connectivity_Fault_Types': ', '.join(
+                    [f"{name}:{count}" for name, count in result.get('connectivity_events', {}).get('fault_by_type', {}).items()]
+                ),
+                'Connectivity_Recovery_Types': ', '.join(
+                    [f"{name}:{count}" for name, count in result.get('connectivity_events', {}).get('recovery_by_type', {}).items()]
+                ),
+                'Connectivity_Fault_Codes': ', '.join(
+                    [f"{code}:{count}" for code, count in result.get('connectivity_events', {}).get('fault_by_code', {}).items()]
+                ),
+                'Connectivity_Recovery_Codes': ', '.join(
+                    [f"{code}:{count}" for code, count in result.get('connectivity_events', {}).get('recovery_by_code', {}).items()]
+                ),
                 
                 # Hardware issues
                 'RFID_Faults': result.get('rfid_faults', {}).get('count', 0),
