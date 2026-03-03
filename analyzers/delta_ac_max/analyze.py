@@ -765,9 +765,10 @@ class ChargerAnalyzer:
         
         # Identify critical events
         critical_codes = ['EV0081', 'EV0082', 'EV0083', 'EV0084', 'EV0085', 'EV0086', 'EV0087',
-                         'EV0088', 'EV0089', 'EV0090', 'EV0091', 'EV0092', 'EV0093', 'EV0094',
-                         'EV0095', 'EV0096', 'EV0097', 'EV0098', 'EV0099', 'EV0100', 'EV0101',
-                         'EV0110', 'EV0114', 'EV0115', 'EV0116']
+                 'EV0088', 'EV0089', 'EV0090', 'EV0091', 'EV0092', 'EV0093', 'EV0094',
+                 'EV0095', 'EV0096', 'EV0097', 'EV0098', 'EV0099', 'EV0100', 'EV0101',
+                 'EV0105', 'EV0106', 'EV0107', 'EV0108', 'EV0109',
+                 'EV0110', 'EV0114', 'EV0115', 'EV0116']
         critical_events = [e for e in events if e['code'] in critical_codes]
         
         # Get firmware history for correlation

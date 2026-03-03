@@ -5,6 +5,72 @@
 
 ---
 
+## v0.0.14 - EV0106 Phase-Mismatch Field Diagnosis (2026-03-03)
+
+### Overview
+Documented a repeatable EV0106 field pattern for single-phase Delta AC MAX units:
+charging begins, faults quickly, and SystemLog phase measurements show L1 voltage with L3 current.
+
+### What Was Learned
+
+1. **EV0106 recurrence can indicate plausibility mismatch, not only zero current**
+  - EventLog `EV0106` aligns with SystemLog `Lack of current`.
+  - Repeated snapshots can show `InAcVoltL1>0` while `CurL3>0` on single-phase units.
+
+2. **Charger-checker test is the fastest discriminator**
+  - If checker shows `L1` live: likely internal sensing/channel mapping fault.
+  - If checker shows `L3` live: strong evidence of internal output phase miswire.
+
+3. **Installer fault is less likely for tethered prewired output leads**
+  - Installer typically only lands incoming supply terminals.
+  - Output phase swap at connector side points to internal/factory-side issue.
+
+### Documentation Updated
+
+- `patterns/hardware_faults.md`
+  - Added section: `EV0106: Lack of Current with Phase Mismatch (Single-Phase Units)`
+  - Added practical site-electrician diagnostic steps and escalation guidance.
+
+### Operational Guidance
+
+- Treat repeated `L1 voltage + L3 current` signatures with EV0106 as charger-internal until disproven.
+- Use charger-checker + clamp-vs-telemetry comparison before deciding repair vs replacement.
+
+---
+
+## v0.0.13 - Error Code Table Refresh (EV0105-EV0109) (2026-03-03)
+
+### Overview
+Updated the Delta AC MAX error-code mapping from newer BU fault-code reference material.
+Added previously missing entries `EV0105` through `EV0109`, and confirmed `EV0106` semantics.
+
+### What Was Learned
+
+1. **EV0105 exists and is wiring/model mismatch related**
+  - `Over Phase Input`: single-phase model connected to 3-phase input.
+
+2. **EV0106 official definition confirmed**
+  - `Lack of current`: output current cannot be detected or is wrongly detected.
+  - Field case KKB225100107WE shows timestamp alignment with SystemLog `Lack of current` and immediate `C2 -> F` transition.
+
+3. **Additional thermal and electrical protection codes documented**
+  - `EV0107` Output connector OTP
+  - `EV0108` Relay OTP
+  - `EV0109` PEN (N-PE voltage >70V)
+
+### Documentation Updated
+
+- `reference/error_codes.md`
+  - Added sections for `EV0105`-`EV0109`
+  - Added field-correlation note for `EV0106`
+
+### Analyzer Updated
+
+- `analyzers/delta_ac_max/error_codes.py`
+  - Added runtime mappings for `EV0105`-`EV0109`
+
+---
+
 ## v0.0.12 - Field Actions Refinement: Modbus Write Hygiene + Early OCP Interpretation (2026-02-27)
 
 ### Overview

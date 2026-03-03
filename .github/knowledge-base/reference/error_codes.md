@@ -309,6 +309,37 @@
 - **Root Cause:** User-initiated emergency stop
 - **Fix:** Unplug gun, release emergency button
 
+### EV0105 - Over Phase Input
+- **MCU Alarm:** 28 | **LED:** Red, 1 Flash
+- **Cause:** One-phase model connected with 3-phase input voltage
+- **Root Cause:** Input wiring/model mismatch
+- **Fix:** Power off charger, check input line, remove L2/L3 for single-phase model
+
+### EV0106 - Lack of Current
+- **MCU Alarm:** 27 | **LED:** Solid Red
+- **Cause:** Output current cannot be detected or is detected incorrectly
+- **Root Cause:** Current feedback path abnormal (sensor/metering/signal path)
+- **Fix:** Power cycle charger, verify current feedback, call service team if feedback remains incorrect
+- **Field Correlation:** In KKB225100107WE (Feb 2026), EV0106 timestamps align with `Lack of current` in SystemLog and immediate `C2 -> F` session abort
+
+### EV0107 - Output Connector OTP
+- **MCU Alarm:** 16
+- **Cause:** Output connector temperature exceeds protection threshold
+- **Root Cause:** Connector/cable thermal overload or sensing issue
+- **Fix:** Power off for 10 minutes, power on and retest; service if persists
+
+### EV0108 - Relay OTP
+- **MCU Alarm:** 22
+- **Cause:** Relay temperature exceeds protection threshold
+- **Root Cause:** Relay thermal overload or thermal path issue
+- **Fix:** Power off for 10 minutes, power on and retest; service if persists
+
+### EV0109 - PEN
+- **MCU Alarm:** 18 | **LED:** Solid Red
+- **Cause:** N-PE voltage over 70V
+- **Root Cause:** Grounding/PE integrity issue
+- **Fix:** Check ground and PE wiring, contact service if persists
+
 ## Error Code Format Notes
 
 - **Error Codes:** EVXXXX format (e.g., EV0081, EV0117)

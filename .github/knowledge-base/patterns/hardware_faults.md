@@ -566,6 +566,51 @@ The "Get RTC Info" message contains the **actual timestamp** (corrected via NTP/
 
 ---
 
+## EV0106: Lack of Current with Phase Mismatch (Single-Phase Units)
+
+### Field Pattern
+
+Observed in Delta AC MAX single-phase deployments where charging starts, then faults red quickly.
+
+**Repeated signature near fault time:**
+- EventLog: `EV0106` (Lack of current)
+- SystemLog: `Lack of current`
+- Electrical snapshot shows:
+  - `InAcVoltL1 > 0`
+  - `InAcVoltL2 = 0`, `InAcVoltL3 = 0`
+  - `CurL1 = 0`, `CurL2 = 0`, `CurL3 > 0`
+
+For true single-phase `L1-N` operation, current on `L3` is not physically expected.
+
+### Interpretation
+
+- Most likely: internal charger phase mapping/sensing path fault.
+- Also possible: internal tether/output phase miswire (factory-side on prewired tethered model).
+- Less likely: installer-side issue when supply terminals are verified as `L1-N` and stable.
+
+### Fast Discriminator (Charger Checker)
+
+Run a Type 2 charger checker during charge start when contactor closes:
+
+1. **Checker shows L1 live (expected):**
+   - Supply/output phase likely correct.
+   - Remaining issue likely internal sensing/channel mapping fault.
+
+2. **Checker shows L3 live (unexpected for single-phase L1-N):**
+   - Strong evidence of internal output phase miswire.
+   - Treat as charger internal fault (repair/RMA).
+
+### Recommended Site Actions
+
+1. Verify incoming EVSE terminals are correctly `L1-N` and stable under load attempt.
+2. Perform charger-checker phase indication test at output.
+3. Compare clamp-meter output conductor current vs charger-reported phase current.
+4. If mismatch persists, escalate as charger internal fault (repair/replacement).
+
+**Field note:** In tethered models, installer does not modify tether internal conductors; confirmed phase swap at output is typically factory/internal.
+
+---
+
 **Related Knowledge:**
 - [Error Codes](../reference/error_codes.md) - Hardware fault error codes
 - [OCPP Protocol](ocpp_protocol.md) - Network disconnect correlation
@@ -574,5 +619,5 @@ The "Get RTC Info" message contains the **actual timestamp** (corrected via NTP/
 
 ---
 
-**Last Updated:** 2026-01-26  
+**Last Updated:** 2026-03-03  
 **Source:** Field cases, Delta documentation, SystemLog analysis
