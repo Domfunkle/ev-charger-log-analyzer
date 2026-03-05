@@ -61,6 +61,56 @@ class ChargerAnalyzer:
         self.hardware_detector = HardwareDetector()
         self.lms_detector = LmsDetector()
         self.state_detector = StateMachineDetector()
+
+    def detect_charger_model(self, folder):
+        """Detect charger family from extracted folder structure and log signatures.
+
+        Returns:
+            tuple[str, list[str]]: (model_key, evidence)
+                - delta_ac_max
+                - delta_wallbox_25kw_dc
+                - unknown
+        """
+        storage_dir = folder / "Storage"
+        evidence = []
+
+        if not storage_dir.exists():
+            return "unknown", ["missing Storage folder"]
+
+        # Delta AC MAX convention: Storage/EventLog + Storage/SystemLog/SystemLog(.n)
+        event_log_dir = storage_dir / "EventLog"
+        if event_log_dir.exists():
+            evidence.append("Storage/EventLog")
+            system_log_dir = storage_dir / "SystemLog"
+            if system_log_dir.exists() and (system_log_dir / "SystemLog").exists():
+                evidence.append("Storage/SystemLog/SystemLog")
+            return "delta_ac_max", evidence
+
+        # Delta Wallbox 25kW convention observed in field:
+        # Storage/Events + Storage/SystemLog/[YYYY.MM]SystemLog and OCPP16J_Log.csv
+        events_dir = storage_dir / "Events"
+        system_log_dir = storage_dir / "SystemLog"
+        if events_dir.exists() and system_log_dir.exists():
+            evidence.append("Storage/Events")
+
+            month_system_logs = [
+                p for p in system_log_dir.glob("*SystemLog")
+                if re.match(r'^\[\d{4}\.\d{2}\]SystemLog$', p.name)
+            ]
+            month_ocpp_logs = [
+                p for p in system_log_dir.glob("*OCPP16J_Log.csv")
+                if re.match(r'^\[\d{4}\.\d{2}\]OCPP16J_Log\.csv$', p.name)
+            ]
+
+            if month_system_logs:
+                evidence.append("Storage/SystemLog/[YYYY.MM]SystemLog")
+            if month_ocpp_logs:
+                evidence.append("Storage/SystemLog/[YYYY.MM]OCPP16J_Log.csv")
+
+            if month_system_logs or month_ocpp_logs:
+                return "delta_wallbox_25kw_dc", evidence
+
+        return "unknown", ["unrecognized log layout"]
     
     def _parse_rtc_syncs(self, folder):
         """Parse RTC sync messages from all SystemLog files to build year timeline
@@ -636,6 +686,10 @@ class ChargerAnalyzer:
 
         report_progress(2, "Initializing")
 
+        model_key, _ = self.detect_charger_model(folder)
+        if model_key != "delta_ac_max":
+            return None
+
         # Extract charger info from folder name
         match = re.search(r'\]([A-Z0-9]{14})(.*)$', folder.name)
         
@@ -1064,6 +1118,27 @@ class ChargerAnalyzer:
             return
         
         console.print(f"[bold]Found {len(folders)} charger log folder(s)[/bold]\n")
+
+        supported_folders = []
+        unsupported_folders = []
+        for folder in folders:
+            model_key, evidence = self.detect_charger_model(folder)
+            if model_key == "delta_ac_max":
+                supported_folders.append(folder)
+            else:
+                unsupported_folders.append((folder, model_key, evidence))
+
+        if unsupported_folders:
+            console.print("[yellow]Skipping unsupported charger models for delta-ac-max-analyzer:[/yellow]")
+            for folder, model_key, evidence in unsupported_folders:
+                evidence_text = ", ".join(evidence) if evidence else "no evidence"
+                console.print(f"[yellow]- {folder.name}: detected [bold]{model_key}[/bold] ({evidence_text})[/yellow]")
+            console.print("[dim]Tip: Wallbox 25kW logs typically use Storage/Events (not Storage/EventLog).[/dim]\n")
+
+        folders = supported_folders
+        if not folders:
+            console.print("[yellow]No Delta AC MAX folders detected to analyze.[/yellow]")
+            return
         
         # If only 1 charger or parallel disabled, use sequential processing
         if len(folders) == 1 or not parallel:
