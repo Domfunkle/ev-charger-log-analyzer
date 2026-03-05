@@ -5,6 +5,53 @@
 
 ---
 
+## v0.0.15 - KKB225100391WE Chronic Backend Flapping Baseline (2026-03-06)
+
+### Overview
+Field review of KKB225100391WE confirms repeated backend disconnect/reconnect behavior is
+not recent. Event history shows persistent connectivity fault/recovery patterns from late 2023
+through current logs, including after firmware moved to `01.26.38.00`.
+
+### What Was Learned
+
+1. **Pattern is chronic, not newly introduced**
+  - `011002/111002` pairs are present from late 2023 onward in retained EventLog data.
+  - Aggregate scan across EventLog files showed very high recurrence, supporting long-term instability.
+
+2. **Post-upgrade persistence rules out "old firmware only" explanation**
+  - Disconnect cadence remained after upgrade to `01.26.38.00`.
+  - This supports either network-path physical issues or charger-side comms stack instability.
+
+3. **Transport A/B testing is a useful discriminator**
+  - Compare Ethernet vs Wi-Fi/cellular to GreenFlux.
+  - Improvement only on alternate transport indicates Ethernet/path issue.
+  - Persistence across transports indicates deeper charger comms/firmware issue.
+
+4. **Upgrade/recommission best practice remains required**
+  - When jumping firmware versions, perform full best-practice sequence:
+    latest firmware (`01.26.39.00`), factory reset, browser cache clear, recommission.
+  - If issue persists after this sequence and transport A/B checks, replacement should be considered.
+
+### Operational Guidance
+
+- Ask site to confirm approximate install/commission date to correlate with first observed flapping.
+- Execute remediation in this order:
+  1) Update to latest firmware
+  2) Factory reset + clear cache + recommission
+  3) Ethernet vs Wi-Fi/cellular A/B test
+- Escalate to charger replacement if repeated disconnects persist after above steps.
+
+### Documentation Updated
+
+- `case-studies/kkb225100391we_chronic_connectivity_flapping.md`
+  - Added dedicated case baseline and transport A/B diagnostic decision path.
+- `knowledge-base/README.md`
+  - Added case-study navigation link.
+- `copilot-instructions.md`
+  - Added case-study quick-reference and knowledge-tree entry.
+
+---
+
 ## v0.0.14 - EV0106 Phase-Mismatch Field Diagnosis (2026-03-03)
 
 ### Overview
@@ -1666,5 +1713,5 @@ Major knowledge expansion from Federation University multi-charger case study. R
 
 ---
 
-**Last Updated:** 2026-01-26  
+**Last Updated:** 2026-03-06  
 **Maintainer:** Update this file when adding new patterns, learning from field cases, or refactoring code

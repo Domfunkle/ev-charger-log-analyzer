@@ -25,7 +25,7 @@ You are a specialized agent for the **EV Charger Log Analyzer** project. Your pr
 
 ## Project Structure
 
-**Last Updated:** 2026-02-11 (RTC Reset Detection + 3-min Gap Threshold)
+**Last Updated:** 2026-03-06 (Added chronic connectivity case baseline)
 
 ```
 ev-charger-log-analyzer/
@@ -133,6 +133,7 @@ Always ensure:
 - **[Federation University](knowledge-base/case-studies/federation_university.md)** - Dual-source limiting + RFID failure (July-Dec 2024)
 - **[EVS09 SystemLog Failure](knowledge-base/case-studies/evs09_systemlog_failure.md)** - 17-day logging gap analysis (Jan-Feb 2026)
 - **[KKB241600082WE ChangeConfig Bursts](knowledge-base/case-studies/kkb241600082we_changeconfig_bursts.md)** - OCP correlation with reconnect/config replay storms
+- **[KKB225100391WE Chronic Connectivity Flapping](knowledge-base/case-studies/kkb225100391we_chronic_connectivity_flapping.md)** - Multi-year backend flapping baseline and transport A/B diagnostic path
 
 ### 🛠️ Development Guides (How-To)
 - **[Pattern Detection](knowledge-base/development/pattern_detection.md)** - How to add new patterns (step-by-step)
@@ -297,7 +298,8 @@ knowledge-base/
 ├── case-studies/                   (real-world scenarios)
 │   ├── federation_university.md    (dual-source + RFID fault)
 │   ├── evs09_systemlog_failure.md  (SystemLog gap w/ OCPP active)
-│   └── kkb241600082we_changeconfig_bursts.md (ChangeConfiguration burst correlation)
+│   ├── kkb241600082we_changeconfig_bursts.md (ChangeConfiguration burst correlation)
+│   └── kkb225100391we_chronic_connectivity_flapping.md (chronic 011002/111002 baseline)
 └── development/                    (how-to guides)
     ├── pattern_detection.md        (add new patterns)
     ├── modularity_guidelines.md    (organization)
@@ -345,9 +347,9 @@ knowledge-base/
 
 ---
 
-**Last Updated:** 2026-02-11 (RTC Reset False Positives Fixed)  
+**Last Updated:** 2026-03-06 (Chronic connectivity case-study baseline added)  
 **Lines:** ~328  
-**Knowledge:** 14 modular documents (~5,400 lines total, organized and cross-linked)  
+**Knowledge:** 15 modular documents (~5,400 lines total, organized and cross-linked)  
 **Philosophy:** "Modularity first - both code and knowledge"  
 
 **⚠️ Action Required:** Split `learning_history.md` (1062 lines) and `hardware.py` (446 lines) to meet modularity guidelines
