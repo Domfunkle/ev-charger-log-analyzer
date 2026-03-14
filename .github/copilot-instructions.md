@@ -134,6 +134,7 @@ Always ensure:
 - **[EVS09 SystemLog Failure](knowledge-base/case-studies/evs09_systemlog_failure.md)** - 17-day logging gap analysis (Jan-Feb 2026)
 - **[KKB241600082WE ChangeConfig Bursts](knowledge-base/case-studies/kkb241600082we_changeconfig_bursts.md)** - OCP correlation with reconnect/config replay storms
 - **[KKB225100391WE Chronic Connectivity Flapping](knowledge-base/case-studies/kkb225100391we_chronic_connectivity_flapping.md)** - Multi-year backend flapping baseline and transport A/B diagnostic path
+- **[EVS09 Replacement Misconfiguration](knowledge-base/case-studies/evs09_replacement_misconfiguration.md)** - Offline policy on fresh replacement unit at disconnected site (DoCs Joondalup)
 
 ### 🛠️ Development Guides (How-To)
 - **[Pattern Detection](knowledge-base/development/pattern_detection.md)** - How to add new patterns (step-by-step)
@@ -299,7 +300,8 @@ knowledge-base/
 │   ├── federation_university.md    (dual-source + RFID fault)
 │   ├── evs09_systemlog_failure.md  (SystemLog gap w/ OCPP active)
 │   ├── kkb241600082we_changeconfig_bursts.md (ChangeConfiguration burst correlation)
-│   └── kkb225100391we_chronic_connectivity_flapping.md (chronic 011002/111002 baseline)
+│   ├── kkb225100391we_chronic_connectivity_flapping.md (chronic 011002/111002 baseline)
+│   └── evs09_replacement_misconfiguration.md (offline policy misconfiguration)
 └── development/                    (how-to guides)
     ├── pattern_detection.md        (add new patterns)
     ├── modularity_guidelines.md    (organization)
@@ -347,9 +349,9 @@ knowledge-base/
 
 ---
 
-**Last Updated:** 2026-03-06 (Chronic connectivity case-study baseline added)  
-**Lines:** ~328  
-**Knowledge:** 15 modular documents (~5,400 lines total, organized and cross-linked)  
+**Last Updated:** 2026-03-13 (EVS09 replacement misconfiguration case study added)  
+**Lines:** ~330  
+**Knowledge:** 16 modular documents (~5,600 lines total, organized and cross-linked)  
 **Philosophy:** "Modularity first - both code and knowledge"  
 
 **⚠️ Action Required:** Split `learning_history.md` (1062 lines) and `hardware.py` (446 lines) to meet modularity guidelines

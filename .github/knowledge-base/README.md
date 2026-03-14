@@ -29,6 +29,7 @@ Real-world scenarios, diagnosis walkthroughs, lessons learned - the "what happen
 - **[Federation University](case-studies/federation_university.md)** - Dual-source current limiting + RFID hardware failure
 - **[KKB241600082WE ChangeConfig Bursts](case-studies/kkb241600082we_changeconfig_bursts.md)** - OCP correlation with reconnect/config replay storms
 - **[KKB225100391WE Chronic Connectivity Flapping](case-studies/kkb225100391we_chronic_connectivity_flapping.md)** - Multi-year 011002/111002 persistence, recommission + transport A/B diagnosis
+- **[EVS09 Replacement Misconfiguration](case-studies/evs09_replacement_misconfiguration.md)** - Offline policy on fresh replacement unit at disconnected site
 
 ### 🛠️ Development Guides
 How to extend the analyzer, maintain modularity - the "how do I?" knowledge

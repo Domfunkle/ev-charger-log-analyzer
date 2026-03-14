@@ -5,8 +5,9 @@
 **Age:** <1 year old (logs from July 2025, ~7 months operation)  
 **Firmware:** v01.26.38.00 → v01.26.39.00 (upgraded Jan 22 02:04)  
 **Issue:** 17.3-day SystemLog gap after firmware upgrade, initially misclassified as power loss  
-**Status:** OPEN - **Likely EVS09-specific hardware/config issue**, NOT firmware bug  
-**Fleet Context:** 13 chargers received v01.26.39.00 on Jan 22 - only EVS09 failed
+**Status:** CLOSED - Unit physically replaced (Feb 2026)  
+**Fleet Context:** 13 chargers received v01.26.39.00 on Jan 22 - only EVS09 failed  
+**Resolution:** Unit replaced with KKB251700192WE. See [EVS09 Replacement Misconfiguration](evs09_replacement_misconfiguration.md) for post-replacement issues.
 
 ---
 

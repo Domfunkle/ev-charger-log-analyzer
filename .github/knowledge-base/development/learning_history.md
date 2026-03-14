@@ -5,6 +5,61 @@
 
 ---
 
+## v0.0.16 - EVS09 Replacement Offline Policy Misconfiguration (2026-03-13)
+
+### Overview
+Investigated replacement charger KKB251700192WE at DoCs Joondalup (EVS09 position). Initial
+report was "charger not charging" after physical replacement of the original unit
+(KKB233100447WE, which had the SystemLog failure documented in v0.0.8). Root cause was
+**offline authorization policy misconfiguration**, not hardware fault.
+
+### What Was Learned
+
+1. **Replacement units need offline policy verification**
+   - Fresh chargers have empty local auth lists and authorize caches.
+   - "Local list and Authorize cache" policy on a fresh unit with no backend = no sessions authorized.
+   - Must set to "Plug and Charge" when backend is unreachable.
+
+2. **Charger checker State D events are test artifacts, not faults**
+   - Field tech's charger checker tool tests State D (ventilation request).
+   - Delta AC MAX does not support State D → generates EV0091 fault + State D transition in logs.
+   - These events look like pilot instability but are benign test artifacts.
+   - Pattern: State D detected → EV0091 → immediate recovery → normal operation.
+   - Should be recognized in log analysis when coinciding with known site visit dates.
+
+3. **Backend-disconnected sites amplify diagnostic noise**
+   - 36,537 `CLIENT_CONNECTION_ERROR` and 25,523 `conn fail: 113` are expected noise when
+     backend/gateway is unreachable — not diagnostic of charger hardware.
+   - 180 `IsAuthOK_OCPP16J` failures were the actual symptom of the misconfiguration.
+   - Must separate connectivity noise from actionable authorization failures.
+
+4. **Commissioning checklist gap identified**
+   - No standard verification of offline policy during replacement commissioning.
+   - Original unit's accumulated auth cache masked the dependency on this setting.
+   - Proposed checklist: offline policy, ChargBox ID, network config, OCPP endpoint, test session.
+
+### Documentation Updated
+
+- `case-studies/evs09_systemlog_failure.md`
+  - Updated status from OPEN to CLOSED (unit physically replaced).
+  - Added cross-link to new replacement case study.
+- `case-studies/evs09_replacement_misconfiguration.md`
+  - New case study documenting the replacement unit investigation.
+  - Includes root cause, log evidence, site status, and lessons learned.
+- `copilot-instructions.md`
+  - Added case-study quick-reference entry.
+- `knowledge-base/README.md`
+  - Added navigation link for new case study.
+
+### Operational Guidance
+
+- When replacing chargers at sites with no backend connectivity, always set offline policy to "Plug and Charge".
+- Audit all chargers at site for consistent offline policies when backend is down fleet-wide.
+- Recognize EV0091 + State D clusters near known site visits as charger checker artifacts.
+- EVS08 at DoCs Joondalup still pending — needs log pull for MCU comm failure investigation.
+
+---
+
 ## v0.0.15 - KKB225100391WE Chronic Backend Flapping Baseline (2026-03-06)
 
 ### Overview
