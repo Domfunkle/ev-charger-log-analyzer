@@ -135,6 +135,7 @@ Always ensure:
 - **[KKB241600082WE ChangeConfig Bursts](knowledge-base/case-studies/kkb241600082we_changeconfig_bursts.md)** - OCP correlation with reconnect/config replay storms
 - **[KKB225100391WE Chronic Connectivity Flapping](knowledge-base/case-studies/kkb225100391we_chronic_connectivity_flapping.md)** - Multi-year backend flapping baseline and transport A/B diagnostic path
 - **[EVS09 Replacement Misconfiguration](knowledge-base/case-studies/evs09_replacement_misconfiguration.md)** - Offline policy on fresh replacement unit at disconnected site (DoCs Joondalup)
+- **[DoCs Joondalup EVS08 & EVS12 Mar 2026](knowledge-base/case-studies/docs_joondalup_evs08_evs12_march2026.md)** - EVS08 second syslog gap instance (v01.26.39.00) + EVS12 RCD self-test failure (EV0086)
 
 ### 🛠️ Development Guides (How-To)
 - **[Pattern Detection](knowledge-base/development/pattern_detection.md)** - How to add new patterns (step-by-step)
@@ -349,7 +350,7 @@ knowledge-base/
 
 ---
 
-**Last Updated:** 2026-03-13 (EVS09 replacement misconfiguration case study added)  
+**Last Updated:** 2026-03-20 (DoCs Joondalup EVS08/EVS12 case study added)  
 **Lines:** ~330  
 **Knowledge:** 16 modular documents (~5,600 lines total, organized and cross-linked)  
 **Philosophy:** "Modularity first - both code and knowledge"  

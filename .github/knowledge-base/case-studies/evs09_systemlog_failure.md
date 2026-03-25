@@ -6,8 +6,10 @@
 **Firmware:** v01.26.38.00 → v01.26.39.00 (upgraded Jan 22 02:04)  
 **Issue:** 17.3-day SystemLog gap after firmware upgrade, initially misclassified as power loss  
 **Status:** CLOSED - Unit physically replaced (Feb 2026)  
-**Fleet Context:** 13 chargers received v01.26.39.00 on Jan 22 - only EVS09 failed  
+**Fleet Context:** 13 chargers received v01.26.39.00 on Jan 22 - only EVS09 failed initially  
 **Resolution:** Unit replaced with KKB251700192WE. See [EVS09 Replacement Misconfiguration](evs09_replacement_misconfiguration.md) for post-replacement issues.
+
+> ⚠️ **Second confirmed instance:** KKB233100467WE (EVS08) developed an identical ~15.8-day SystemLog gap (Feb 10–Feb 26 2026) on the same firmware v01.26.39.00. EVS08 also had a prior gap on v01.26.37.00 (Dec 23 2025), suggesting the bug may not be version-specific. See [EVS08 & EVS12 DoCs Joondalup](#related-knowledge) and the [v0.0.17 learning history entry](../development/learning_history.md#v0017).
 
 ---
 
@@ -209,11 +211,13 @@ Feb 9 03:58:50 (first entry after 17.3 day gap)
    - Update timing coincidental, not causal
    - Would have failed anyway within days
 
-6. **Firmware Bug in v01.26.39.00 (UNLIKELY):**
-   - Requires EVS09-specific trigger condition
-   - Memory leak in specific code path
-   - Race condition in specific scenarios
-   - **Weak evidence:** 12 other chargers had no issues
+6. **Firmware Bug (Cross-version, ELEVATED LIKELIHOOD as of 2026-03):**
+   - EVS09 showed gap on v01.26.37.00 (Dec 23 2025) AND v01.26.39.00 (Jan 22 2026)
+   - EVS08 (KKB233100467WE) showed gap on v01.26.39.00 (Feb 10 2026) but had clean logs on v01.26.37.00
+   - Pattern is not cleanly firmware-version-specific; may be a latent bug triggered by
+     hardware stress, flash degradation, or environmental factors
+   - **Updated evidence:** Two independent units at same site, same firmware v01.26.39.00 at time of gap
+   - Escalated to Delta Electronics (Mar 2026) for investigation
 
 ### OCPP Resilience Analysis
 
@@ -521,7 +525,9 @@ else:
 ## Related Knowledge
 
 - [Learning History v0.0.8](../development/learning_history.md#v008) - SystemLog failure detection
+- [Learning History v0.0.17](../development/learning_history.md#v0017) - EVS08 second confirmed instance + EVS12 RCD fault
 - [Hardware Faults](../patterns/hardware_faults.md) - Logging system failures
 - [Firmware Bugs](../reference/firmware_bugs.md) - Storage unmount errors (benign)
+- [EVS08 & EVS12 DoCs Joondalup 2026-03](docs_joondalup_evs08_evs12_march2026.md) - Second syslog gap instance + RCD fault
 
-**Status:** OPEN - Root cause unknown, needs Delta engineering investigation
+**Status:** OPEN - Root cause unknown, escalated to Delta Electronics Mar 2026

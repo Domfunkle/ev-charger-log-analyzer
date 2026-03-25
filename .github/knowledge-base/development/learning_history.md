@@ -5,6 +5,79 @@
 
 ---
 
+## v0.0.17 - EVS08 SystemLog Gap (Second Instance) + EVS12 RCD Fault (2026-03-20)
+
+### Overview
+Log analysis for DoCs Joondalup site visit (March 20 2026). Two chargers investigated:
+KKB233100467WE (EVS08) exhibited the same ~16-day silent SystemLog gap previously documented
+on EVS09, confirming this as a multi-unit pattern. KKB233100472WE (EVS12) suffered a hardware
+RCD self-test failure (EV0086) entering permanent CP State F lockout.
+
+### What Was Learned
+
+1. **SystemLog gap is a confirmed multi-unit pattern, not EVS09-specific**
+   - EVS08 (KKB233100467WE) showed a ~15.8-day gap: Feb 10 04:22:09 → Feb 26 00:48:36 UTC
+   - EVS08 was on v01.26.39.00 at time of gap, same as EVS09's second gap
+   - EVS08 had clean logs on v01.26.37.00 (Aug 2025 – Jan 22 2026) — no gaps before update
+   - Key diagnostic: `syslogd exiting` NOT logged — unclean daemon stop (crash/kill), not clean shutdown
+   - OCPP log continues throughout gap (charger was powered; OCPP errors expected due to intentional EVLM disconnect)
+
+2. **Firmware version correlation is inconclusive**
+   - EVS09 had gaps on BOTH v01.26.37.00 and v01.26.39.00
+   - EVS08 had gaps only on v01.26.39.00 (clean on v01.26.37.00)
+   - Cannot attribute solely to v01.26.39.00; may be hardware-dependent (flash degradation threshold)
+   - Escalated to Delta Electronics for investigation (Mar 2026)
+
+3. **EV0086 = RCD self-test failure → CP State F (hardware fault)**
+   - EVS12 (KKB233100472WE) failed RCD self-test at Mar 18 04:46:55 UTC during charge initiation
+   - Last successful session ended 47 min earlier (03:59:47 UTC, 3.6 kWh)
+   - Charger transitions B1 → F and remains locked out permanently
+   - `user.alert` facility used (highest severity before panic) — safety-critical
+   - Will NOT self-recover; requires physical RCD inspection/replacement
+   - Independent from the SystemLog gap issue
+
+4. **MCU fault (Nov 2025) did not recur post-firmware update on EVS08**
+   - Zero MCU `Send Command False` errors from Jan 22 2026 onwards
+   - Power cycle on Nov 27 2025 resolved the fault; update to v01.26.39.00 appears to have prevented recurrence
+   - The Nov 2025 MCU fault and the Feb 2026 syslog gap may or may not be related
+
+5. **DoCs Joondalup site issues are multi-cause, not systemic**
+   - EVS03: physical cable fault (kinked ethernet)
+   - EVS09: SystemLog gap (hardware/firmware interaction) → replaced
+   - EVS08: MCU fault + SystemLog gap (same firmware bug pattern)
+   - EVS12: RCD hardware failure (unrelated to syslog issue)
+   - No single systemic cause; combination of firmware bug and hardware failures
+
+### Key UTC Timestamps for Delta Escalation
+
+**KKB233100447WE (EVS09) — first instance:**
+- Gap 1 (v01.26.37.00): last entry Dec 23 2025 07:12:05 UTC
+- Gap 2 (v01.26.39.00): last entry Jan 22 2026 ~19:51 UTC → resumes Feb 9 03:58:50 UTC
+
+**KKB233100467WE (EVS08) — second instance:**
+- Gap (v01.26.39.00): last entry Feb 10 2026 04:22:09 UTC → resumes Feb 26 00:48:36 UTC
+- syslogd exiting: NOT logged (unclean stop)
+
+### Documentation Updated
+
+- `case-studies/evs09_systemlog_failure.md`
+  - Added second confirmed instance notice at top
+  - Updated firmware bug likelihood from UNLIKELY to ELEVATED
+  - Updated related knowledge links
+- `case-studies/docs_joondalup_evs08_evs12_march2026.md` — **NEW**
+  - Full case study for EVS08 syslog gap and EVS12 RCD fault
+  - Site-level observations across all problematic chargers
+  - Key timestamps for Delta escalation
+
+### Operational Guidance
+
+- When syslog gap is detected and `syslogd exiting` is absent, flag as unclean daemon stop
+- EVS12 requires service call before returning to operation
+- EVS08 can continue operating; monitor for gap recurrence
+- Raise EV0086 events as hardware faults requiring physical intervention, not firmware issues
+
+---
+
 ## v0.0.16 - EVS09 Replacement Offline Policy Misconfiguration (2026-03-13)
 
 ### Overview
