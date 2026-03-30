@@ -182,6 +182,91 @@ It is **uncertain** whether factory reset clears Modbus holding registers to def
 
 ---
 
+## Flash-Cached MeterValues WebSocket Write Race Condition
+
+### Overview
+**Pattern:** `MeterValuesReq NG` + `CS Cmd busy` loop in OCPP16J_Log.csv  
+**Severity:** CRITICAL - Charger unresponsive to all server commands indefinitely  
+**Firmware Affected:** v01.26.37.00 (confirmed); other versions unknown  
+**First Discovered:** March 2026 (KKB251100063WE demo unit, Andrew Carr)
+
+### Symptoms
+- Hundreds of `CS Cmd busy` entries per hour in OCPP16J_Log.csv
+- `[IsTxCmdOK] Time out` → `MeterValuesReq NG` every ~30 seconds
+- Connect/disconnect loop every ~40 seconds
+- Charger never responds to RemoteStartTransaction (it never arrives)
+- Charging sessions cannot be started from the server
+- Server logs show 0 MeterValues received despite charger logging MeterValuesReq
+
+### Root Cause
+
+The charger caches MeterValues to flash when a session ends without backend ACK (correct
+per OCPP spec). On reconnect, it attempts to replay the cached MeterValues via
+libwebsockets. The `MeterValuesReq:pu8SendBuf` log entry is written BEFORE `lws_write()`.
+
+When the server sends ClearChargingProfile at the exact same millisecond as the charger's
+write callback fires for MeterValues (which happens reliably because the server sends
+ClearChargingProfile immediately after SetChargingProfile is ACKed, ~1 second into each
+new connection), the MeterValues write is silently dropped at the libwebsockets layer.
+
+The charger's OCPP state machine then blocks waiting for a call result that never comes,
+responding "CS Cmd busy" to all incoming commands. After ~30s `[IsTxCmdOK]` timeout the
+cycle repeats. The server never receives the MeterValues, so it never ACKs them, and the
+flash cache is never cleared.
+
+**Key evidence:** Server logs zero MeterValues from charger despite charger logging
+MeterValuesReq. Stale `ClearChargingProfileConf [status:Unknown]` responses from the
+previous connection are sent first on each new connection (visible as BACKEND ERROR
+"cannot be matched" in server logs).
+
+### Detection
+
+```
+# In OCPP16J_Log.csv — look for repeating frozen-payload cycle:
+MeterValuesReq:pu8SendBuf=[2,"<uuid>","MeterValues",{"transactionId":<N>,...same timestamp...}]
+OCPP16Callback:CS Cmd busy, unique ID=<ClearChargingProfile uuid>
+[IsTxCmdOK] Time out
+MeterValuesReq NG
+```
+
+If the MeterValues payload timestamp never changes across cycles, the transaction is a
+"zombie" — closed server-side but with unACKed periodic MeterValues in flash.
+
+Cross-check: search server logs for `"MeterValues"` from the charger. Count = 0 confirms
+write race (not a true two-party deadlock).
+
+### Workaround (Operational)
+
+**Short-term:** Factory reset the charger. This clears the flash transaction cache.
+- Recommission OCPP and network settings after reset
+- Verify clean session close before declaring fixed
+
+**Server-side mitigation:** Add 2-3 second delay before sending downstream commands
+after each reconnect. This gives the charger's write callback time to complete the
+MeterValues write before ClearChargingProfile arrives, avoiding the write collision.
+
+### Prevention
+
+Never disconnect the backend while a charging session is active. If disconnected
+mid-session, reconnect and stop the session cleanly before leaving the charger unattended.
+
+### Permanent Fix
+
+**Firmware fix required:**
+- Confirm MeterValues write success before setting OCPP state machine to "waiting for ACK"
+- Or: implement write completion callback in libwebsockets integration
+
+### Escalation
+- **Priority:** HIGH — renders demo and production chargers completely unresponsive
+- **Delta Ticket:** (add if raised)
+- **Status:** Factory reset workaround only; firmware fix not confirmed available
+
+### Related
+- **Case Study:** [KKB251100063WE Andrew Carr Demo Deadlock](../case-studies/kkb251100063we_andrew_carr_demo_deadlock.md)
+- **OCPP Protocol:** [OCPP Protocol Patterns](../patterns/ocpp_protocol.md)
+
+---
+
 ## Future Issues (Template)
 
 ### Issue Name

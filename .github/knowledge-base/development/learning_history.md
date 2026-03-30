@@ -5,7 +5,68 @@
 
 ---
 
-## v0.0.17 - EVS08 SystemLog Gap (Second Instance) + EVS12 RCD Fault (2026-03-20)
+## v0.0.18 - Flash-Cached MeterValues Write Race Deadlock (2026-03-26)
+
+### Overview
+Full diagnostic investigation of demo unit KKB251100063WE (DeltaSA1, Andrew Carr).
+Charger was in an unrecoverable connect/disconnect loop preventing any charging sessions.
+Root cause traced to a firmware write race condition in libwebsockets causing cached
+MeterValues to never be transmitted, with the charger's OCPP state machine blocking
+indefinitely on a phantom ACK.
+
+### What Was Learned
+
+1. **`MeterValuesReq:pu8SendBuf` log is pre-send, not post-send confirmation**
+   - Charger logs this BEFORE calling lws_write()
+   - If write fails silently, the log still appears — misleading
+   - Cross-check against server logs: if server receives 0 MeterValues, the write failed
+
+2. **Write race: ClearChargingProfile arrival races with MeterValues write callback**
+   - Server sends SetChargingProfile on connect → immediately sends ClearChargingProfile
+     after ACK (~1s into connection)
+   - ClearChargingProfile reliably arrives at the exact same millisecond as the charger's
+     write callback fires for MeterValues
+   - libwebsockets silently drops the MeterValues write
+   - Confirmed: server logs zero MeterValues from charger across 206 cycles / 2h17m
+
+3. **Stale responses carry over across connections**
+   - Charger buffers ClearChargingProfileConf [status:Unknown] from the dying connection
+   - This is sent FIRST on the new connection before MeterValues
+   - Visible in server logs as BACKEND ERROR "cannot be matched" on every reconnect
+   - Delays MeterValues write further
+
+4. **"CS Cmd busy" indicates OCPP state machine blocked, not a true two-party deadlock**
+   - Previously described as a two-party deadlock (charger waiting for MeterValues ACK,
+     server waiting for ClearChargingProfile response)
+   - More precisely: charger THINKS it sent MeterValues (never did), blocks waiting for ACK
+   - Server never receives MeterValues so cannot ACK — phantom deadlock from one-sided bug
+
+5. **Flash cache survives all reboots; factory reset is the only remedy**
+   - txId 4101 MeterValues (frozen at 2026-03-20T00:59:32Z, 456 Wh) survived 21 reboots
+   - Factory reset confirmed as the only way to clear the flash transaction cache
+   - Server-side StopTransaction cannot clear it (StopTransaction was already ACKed;
+     the issue is the unsent periodic MeterValues, not the stop record)
+
+6. **Server-side contributing factor**
+   - 0ms delay between SetChargingProfile ACK and ClearChargingProfile send
+   - This guarantees write collision on every reconnect
+   - Adding 2-3s delay after reconnect before sending downstream commands would prevent
+     the collision and allow MeterValues to transmit successfully
+
+### Zombie Transaction Details
+- txId 4101 StartTransaction: Mar 20 00:58:33 UTC
+- StopTransaction: ACKed Mar 20 00:59:58 UTC (server-side closed)
+- Stuck MeterValues: timestamp frozen at 2026-03-20T00:59:32Z, 456 Wh
+- Active since Mar 20 ~01:00 UTC through Mar 26 log capture
+
+### Documentation Created/Updated
+- `case-studies/kkb251100063we_andrew_carr_demo_deadlock.md` — NEW full case study
+- `reference/firmware_bugs.md` — NEW "Flash-Cached MeterValues Write Race" section
+- `copilot-instructions.md` — case study link added
+
+---
+
+
 
 ### Overview
 Log analysis for DoCs Joondalup site visit (March 20 2026). Two chargers investigated:
